@@ -50,11 +50,12 @@ projPJ src, dst = NULL;
 double t[6];
 uint32_t width, height;
 
-#define BUFFERSIZE (1<<10)
-#define TILESIZE (1<<8)
+#define STRING_BUFFER_SIZE (1<<10)
+#define TILE_SIZE (1<<8)
+#define BUFFER_SIZE (ceil(sqrt(2)*TILE_SIZE))
 
 
-void world_to_screen(double * xy)
+void world_to_image(double * xy)
 {
   double world_x = xy[0], world_y = xy[1];
 
@@ -84,8 +85,8 @@ void load()
 
   /* SRS */
   srs = OSRNewSpatialReference(NULL);
-  wkt = calloc(BUFFERSIZE, sizeof(char));
-  strncpy(wkt, GDALGetProjectionRef(dataset), BUFFERSIZE);
+  wkt = calloc(STRING_BUFFER_SIZE, sizeof(char));
+  strncpy(wkt, GDALGetProjectionRef(dataset), STRING_BUFFER_SIZE);
   fprintf(stderr, ANSI_COLOR_GREEN "WKT: " ANSI_COLOR_CYAN "%s\n" ANSI_COLOR_RESET, wkt);
   OSRImportFromWkt(srs, &wkt);
   OSRExportToProj4(srs, &dstProj4);
@@ -114,39 +115,40 @@ void zxy(int z, int _x, int _y)
   double n = pow(2.0, z);
   double xmin = DBL_MAX, ymin = DBL_MAX;
   double xmax = DBL_MIN, ymax = DBL_MIN;
+  uint16_t * texture = NULL;
 
-  top   = calloc((TILESIZE<<1), sizeof(double));
-  bot   = calloc((TILESIZE<<1), sizeof(double));
-  left  = calloc((TILESIZE<<1), sizeof(double));
-  right = calloc((TILESIZE<<1), sizeof(double));
+  top   = calloc((TILE_SIZE<<1), sizeof(double));
+  bot   = calloc((TILE_SIZE<<1), sizeof(double));
+  left  = calloc((TILE_SIZE<<1), sizeof(double));
+  right = calloc((TILE_SIZE<<1), sizeof(double));
 
   /*
     TMS to longitude, latitude pairs
     Source: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
   */
-  for (int i = 0; i < (TILESIZE<<1); i+=2) {
-    top[i]   = _x + (i/(TILESIZE*2.0));
+  for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
+    top[i]   = _x + (i/(TILE_SIZE*2.0));
     top[i]   = bot[i] = ((2*M_PI*top[i])/n)-M_PI;
     top[i+1] = atan(sinh(M_PI*(1-(2*_y)/n)));
     bot[i+1] = atan(sinh(M_PI*(1-(2*(_y+1))/n)));
-    left[i+1] = _y + (i/(TILESIZE*2.0));
+    left[i+1] = _y + (i/(TILE_SIZE*2.0));
     left[i+1] = right[i+1] = atan(sinh(M_PI*(1-(2*left[i+1])/n)));
     left[i]   = ((2*M_PI*_x)/n)-M_PI;
     right[i]  = ((2*M_PI*(_x+1))/n)-M_PI;
   }
 
   /* longitude, latitude pairs to world coordinates */
-  pj_transform(src, dst, TILESIZE, 2, top, top+1, NULL);
-  pj_transform(src, dst, TILESIZE, 2, bot, bot+1, NULL);
-  pj_transform(src, dst, TILESIZE, 2, left, left+1, NULL);
-  pj_transform(src, dst, TILESIZE, 2, right, right+1, NULL);
+  pj_transform(src, dst, TILE_SIZE, 2, top, top+1, NULL);
+  pj_transform(src, dst, TILE_SIZE, 2, bot, bot+1, NULL);
+  pj_transform(src, dst, TILE_SIZE, 2, left, left+1, NULL);
+  pj_transform(src, dst, TILE_SIZE, 2, right, right+1, NULL);
 
   /* world coordinates to image coordinates */
-  for (int i = 0; i < (TILESIZE<<1); i+=2) {
-    world_to_screen(top+i);
-    world_to_screen(bot+i);
-    world_to_screen(left+i);
-    world_to_screen(right+i);
+  for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
+    world_to_image(top+i);
+    world_to_image(bot+i);
+    world_to_image(left+i);
+    world_to_image(right+i);
     xmin = fmin(right[i], fmin(left[i], fmin(bot[i], fmin(top[i], xmin))));
     xmax = fmax(right[i], fmax(left[i], fmax(bot[i], fmax(top[i], xmax))));
     ymin = fmin(right[i+1], fmin(left[i+1], fmin(bot[i+1], fmin(top[i+1], ymin))));
@@ -156,6 +158,12 @@ void zxy(int z, int _x, int _y)
   xmax = ceil(xmax);
   ymin = floor(ymin);
   ymax = floor(ymax);
+
+  texture = calloc(BUFFER_SIZE * BUFFER_SIZE, sizeof(uint16_t));
+  GDALRasterIO(band, GF_Read,
+               (int)xmin, (int)ymin, (int)(xmax-xmin), (int)(ymax-ymin),
+               texture, BUFFER_SIZE, BUFFER_SIZE,
+               GDT_UInt16, 0, 0);
 
   fprintf(stderr, "%lf %lf\n", xmin, xmax);
   fprintf(stderr, "%lf %lf\n", ymin, ymax);
