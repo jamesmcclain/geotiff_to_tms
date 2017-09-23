@@ -34,11 +34,13 @@
 
 void init();
 void load();
+void zxy(int, int, int);
 
 
 int main(int argc, const char ** argv)
 {
   init();
   load();
+  zxy(9,380,224);
   return 0;
 }

@@ -31,12 +31,36 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <float.h>
+#include <math.h>
 #include "ansi.h"
 #include "gdal.h"
 #include "cpl_conv.h"
 #include "ogr_srs_api.h"
+#include "proj_api.h"
+
+
+GDALDatasetH dataset = NULL;
+GDALRasterBandH band = NULL;
+const char * latlng = "+proj=longlat +datum=WGS84 +no_defs ";
+const char * filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B1.TIF";
+/* const char * filename = "/vsicurl/https://landsat-pds.s3.amazonaws.com/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B1.TIF"; */
+projPJ src, dst = NULL;
+double t[6];
+uint32_t width, height;
 
 #define BUFFERSIZE (1<<10)
+#define TILESIZE (1<<8)
+
+
+void world_to_screen(double * xy)
+{
+  double world_x = xy[0], world_y = xy[1];
+
+  xy[0] = (-world_x*t[5] + world_y*t[2] + t[0]*t[5] - t[2]*t[3])/(t[2]*t[4] - t[1]*t[5]);
+  xy[1] = (world_x*t[4] - world_y*t[1] + t[0]*t[4] + t[1]*t[3])/(t[2]*t[4] - t[1]*t[5]);
+}
 
 void init()
 {
@@ -45,31 +69,94 @@ void init()
 
 void load()
 {
-  const char * filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B1.TIF";
-  char * wkt;
-  char * proj4;
-  GDALDatasetH * dataset = NULL;
-  double transform[6];
+  char * wkt = NULL, * dstProj4 = NULL;
   OGRSpatialReferenceH srs = NULL;
 
+  /* Dataset */
   dataset = GDALOpen(filename, GA_ReadOnly);
   if(dataset == NULL) {
     fprintf(stderr, ANSI_COLOR_RED "Exiting" ANSI_COLOR_RESET);
     exit(-1);
   }
+  band = GDALGetRasterBand(dataset, 1);
+  width = GDALGetRasterXSize(dataset);
+  height = GDALGetRasterYSize(dataset);
 
+  /* SRS */
   srs = OSRNewSpatialReference(NULL);
   wkt = calloc(BUFFERSIZE, sizeof(char));
   strncpy(wkt, GDALGetProjectionRef(dataset), BUFFERSIZE);
+  fprintf(stderr, ANSI_COLOR_GREEN "WKT: " ANSI_COLOR_CYAN "%s\n" ANSI_COLOR_RESET, wkt);
   OSRImportFromWkt(srs, &wkt);
-  OSRExportToProj4(srs, &proj4);
-  fprintf(stdout, "%s\n", proj4);
-  CPLFree(proj4);
+  OSRExportToProj4(srs, &dstProj4);
+  fprintf(stderr, ANSI_COLOR_GREEN "Proj4: " ANSI_COLOR_CYAN "%s\n" ANSI_COLOR_RESET, dstProj4);
 
-  GDALGetGeoTransform(dataset, transform);
+  src = pj_init_plus(latlng);
+  dst = pj_init_plus(dstProj4);
+
+  /* Transform */
+  GDALGetGeoTransform(dataset, t);
   for (int i = 0; i < 6; ++i) {
-    fprintf(stdout, "%lf ", transform[i]);
+    fprintf(stderr, "%lf ", t[i]);
   }
-  fprintf(stdout, "\n");
+  fprintf(stderr, "\n");
 
+  CPLFree(dstProj4);
+  OSRRelease(srs);
+}
+
+void zxy(int z, int _x, int _y)
+{
+  double * top;
+  double * bot;
+  double * left;
+  double * right;
+  double n = pow(2.0, z);
+  double xmin = DBL_MAX, ymin = DBL_MAX;
+  double xmax = DBL_MIN, ymax = DBL_MIN;
+
+  top   = calloc((TILESIZE<<1), sizeof(double));
+  bot   = calloc((TILESIZE<<1), sizeof(double));
+  left  = calloc((TILESIZE<<1), sizeof(double));
+  right = calloc((TILESIZE<<1), sizeof(double));
+
+  /*
+    TMS to longitude, latitude pairs
+    Source: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
+  */
+  for (int i = 0; i < (TILESIZE<<1); i+=2) {
+    top[i]   = _x + (i/(TILESIZE*2.0));
+    top[i]   = bot[i] = ((2*M_PI*top[i])/n)-M_PI;
+    top[i+1] = atan(sinh(M_PI*(1-(2*_y)/n)));
+    bot[i+1] = atan(sinh(M_PI*(1-(2*(_y+1))/n)));
+    left[i+1] = _y + (i/(TILESIZE*2.0));
+    left[i+1] = right[i+1] = atan(sinh(M_PI*(1-(2*left[i+1])/n)));
+    left[i]   = ((2*M_PI*_x)/n)-M_PI;
+    right[i]  = ((2*M_PI*(_x+1))/n)-M_PI;
+  }
+
+  /* longitude, latitude pairs to world coordinates */
+  pj_transform(src, dst, TILESIZE, 2, top, top+1, NULL);
+  pj_transform(src, dst, TILESIZE, 2, bot, bot+1, NULL);
+  pj_transform(src, dst, TILESIZE, 2, left, left+1, NULL);
+  pj_transform(src, dst, TILESIZE, 2, right, right+1, NULL);
+
+  /* world coordinates to image coordinates */
+  for (int i = 0; i < (TILESIZE<<1); i+=2) {
+    world_to_screen(top+i);
+    world_to_screen(bot+i);
+    world_to_screen(left+i);
+    world_to_screen(right+i);
+    xmin = fmin(right[i], fmin(left[i], fmin(bot[i], fmin(top[i], xmin))));
+    xmax = fmax(right[i], fmax(left[i], fmax(bot[i], fmax(top[i], xmax))));
+    ymin = fmin(right[i+1], fmin(left[i+1], fmin(bot[i+1], fmin(top[i+1], ymin))));
+    ymax = fmax(right[i+1], fmax(left[i+1], fmax(bot[i+1], fmax(top[i+1], ymax))));
+  }
+  xmin = floor(xmin);
+  xmax = ceil(xmax);
+  ymin = floor(ymin);
+  ymax = floor(ymax);
+
+  fprintf(stderr, "%lf %lf\n", xmin, xmax);
+  fprintf(stderr, "%lf %lf\n", ymin, ymax);
 }
