@@ -35,6 +35,7 @@
 void init();
 void load();
 void zxy(int, int, int);
+void whole();
 
 
 int main(int argc, const char ** argv)
@@ -42,5 +43,6 @@ int main(int argc, const char ** argv)
   init();
   load();
   zxy(9,380,224);
+  /* zxy(9,377,226); */
   return 0;
 }
