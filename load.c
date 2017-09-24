@@ -35,12 +35,14 @@
 #include <float.h>
 #include <math.h>
 #include <arpa/inet.h>
-#include <png.h>
-#include "ansi.h"
 #include "gdal.h"
 #include "cpl_conv.h"
 #include "ogr_srs_api.h"
 #include "proj_api.h"
+
+#include "load.h"
+#include "ansi.h"
+#include "pngwrite.h"
 
 
 GDALDatasetH r_dataset = NULL;
@@ -52,85 +54,16 @@ GDALRasterBandH b_band = NULL;
 const char * latlng = "+proj=longlat +datum=WGS84 +no_defs ";
 const char * filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
 /* const char * filename = "/vsicurl/https://landsat-pds.s3.amazonaws.com/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
-projPJ src, dst = NULL;
+projPJ src = NULL, dst = NULL;
 double t[6];
 uint32_t width, height;
+
+void world_to_image(double * xy);
 
 #define STRING_BUFFER_SIZE (1<<10)
 #define TILE_SIZE (1<<8)
 #define TEXTURE_BUFFER_SIZE ((int)(ceil(sqrt(2)*TILE_SIZE)))
 
-
-void write_png(char *file_name,
-               const uint16_t * r_texture,
-               const uint16_t * g_texture,
-               const uint16_t * b_texture,
-               int width, int height)
-{
-  FILE *fp;
-  png_structp png_ptr;
-  png_infop info_ptr;
-  png_color_8 sig_bit;
-  png_bytep row_pointers[height];
-  uint16_t * tile = NULL;
-
-  tile = calloc(width*height*4, sizeof(*tile));
-  for (int j = 0; j < height; ++j) {
-    for (int i = 0; i < width; ++i) {
-      uint64_t dword = 0;
-      dword |= tile[4*i + 4*j*width + 0] = htons(r_texture[i + j*width]);
-      dword |= tile[4*i + 4*j*width + 1] = htons(g_texture[i + j*width]);
-      dword |= tile[4*i + 4*j*width + 2] = htons(b_texture[i + j*width]);
-      tile[4*i + 4*j*width + 3] = (dword ? -1 : 0);
-    }
-  }
-
-  fp = fopen(file_name, "wb");
-
-  png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-  info_ptr = png_create_info_struct(png_ptr);
-  if (setjmp(png_jmpbuf(png_ptr))) {
-    fprintf(stderr, ANSI_COLOR_RED "libpng issue\n" ANSI_COLOR_RESET);
-    exit(-1);
-  }
-
-  png_init_io(png_ptr, fp);
-  png_set_IHDR(png_ptr, info_ptr,
-               width, height, 8*sizeof(*tile),
-               PNG_COLOR_TYPE_RGBA,
-               PNG_INTERLACE_NONE,
-               PNG_COMPRESSION_TYPE_BASE,
-               PNG_FILTER_TYPE_BASE);
-
-  sig_bit.red   = 8*sizeof(*r_texture);
-  sig_bit.green = 8*sizeof(*g_texture);
-  sig_bit.blue  = 8*sizeof(*b_texture);
-  sig_bit.alpha = 8*sizeof(*tile);
-  png_set_sBIT(png_ptr, info_ptr, &sig_bit);
-  png_write_info(png_ptr, info_ptr);
-
-  for (png_uint_32 i = 0; i < height; i++)
-    row_pointers[i] = (png_bytep)(tile + i*width*4);
-  png_write_image(png_ptr, row_pointers);
-  png_write_end(png_ptr, info_ptr);
-  png_destroy_write_struct(&png_ptr, &info_ptr);
-
-  fclose(fp);
-  free(tile);
-}
-
-void world_to_image(double * xy)
-{
-  double world_x = xy[0], world_y = xy[1];
-
-  xy[0] = (-world_x*t[5] + world_y*t[2] + t[0]*t[5] - t[2]*t[3])/(t[2]*t[4] - t[1]*t[5]);
-  xy[1] = (world_x*t[4] - world_y*t[1] + t[0]*t[4] + t[1]*t[3])/(t[2]*t[4] - t[1]*t[5]);
-}
-
-void init()
-{
-  GDALAllRegister();
-}
 
 void load()
 {
@@ -143,6 +76,8 @@ void load()
   sprintf(r_filename, filename, 4);
   sprintf(g_filename, filename, 3);
   sprintf(b_filename, filename, 2);
+
+  GDALAllRegister();
 
   /* Dataset */
   r_dataset = GDALOpen(r_filename, GA_ReadOnly);
@@ -189,6 +124,7 @@ void zxy(int z, int _x, int _y)
   uint16_t * r_texture = NULL;
   uint16_t * g_texture = NULL;
   uint16_t * b_texture = NULL;
+  uint16_t * tile = NULL;
 
   top   = calloc((TILE_SIZE<<1), sizeof(double));
   bot   = calloc((TILE_SIZE<<1), sizeof(double));
@@ -230,65 +166,89 @@ void zxy(int z, int _x, int _y)
   xmin = floor(xmin);
   xmax = ceil(xmax);
   ymin = floor(ymin);
-  ymax = floor(ymax);
+  ymax = ceil(ymax);
 
-  r_texture = calloc(TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE, sizeof(*r_texture));
-  g_texture = calloc(TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE, sizeof(*g_texture));
-  b_texture = calloc(TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE, sizeof(*b_texture));
+  /* Read clipped textures from image */
+  {
+    int startx = (int)xmin, starty = (int)ymin;
+    int rsizex = (int)(xmax-xmin), rsizey = (int)(ymax-ymin);
+    int wsizex = TEXTURE_BUFFER_SIZE, wsizey = TEXTURE_BUFFER_SIZE;
+    int deltax = 0, deltay = 0;
 
-  int startx = (int)xmin, starty = (int)ymin;
-  int rsizex = (int)(xmax-xmin), rsizey = (int)(ymax-ymin);
-  int wsizex = TEXTURE_BUFFER_SIZE, wsizey = TEXTURE_BUFFER_SIZE;
-  int deltax = 0, deltay = 0;
+    r_texture = calloc(TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE, sizeof(*r_texture));
+    g_texture = calloc(TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE, sizeof(*g_texture));
+    b_texture = calloc(TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE, sizeof(*b_texture));
 
-  if (startx < 0) {
-    rsizex += startx;
-    startx = 0;
-    deltax = TEXTURE_BUFFER_SIZE-(int)(wsizex * (rsizex/(xmax-xmin)));
-  }
-  if (starty < 0) {
-    rsizey += starty;
-    starty = 0;
-    deltay = TEXTURE_BUFFER_SIZE-(int)(wsizey * (rsizey/(ymax-ymin)));
-  }
-  if (startx + rsizex >= width) {
-    rsizex = width - startx - 1;
-    rsizex = rsizex > 0? rsizex : 0;
-  }
-  if (starty + rsizey >= height) {
-    rsizey = height - starty - 1;
-    rsizey = rsizey > 0? rsizey : 0;
-  }
-  wsizex = (int)(wsizex * (rsizex/(xmax-xmin)));
-  wsizey = (int)(wsizey * (rsizey/(ymax-ymin)));
+    if (startx < 0) {
+      rsizex += startx;
+      startx = 0;
+      deltax = TEXTURE_BUFFER_SIZE-(int)(wsizex * (rsizex/(xmax-xmin)));
+    }
+    if (starty < 0) {
+      rsizey += starty;
+      starty = 0;
+      deltay = TEXTURE_BUFFER_SIZE-(int)(wsizey * (rsizey/(ymax-ymin)));
+    }
+    if (startx + rsizex >= width) {
+      rsizex = width - startx - 1;
+      rsizex = rsizex > 0? rsizex : 0;
+    }
+    if (starty + rsizey >= height) {
+      rsizey = height - starty - 1;
+      rsizey = rsizey > 0? rsizey : 0;
+    }
+    wsizex = (int)(wsizex * (rsizex/(xmax-xmin)));
+    wsizey = (int)(wsizey * (rsizey/(ymax-ymin)));
 
-  if (GDALRasterIO(r_band, GF_Read,
-                   startx, starty, rsizex, rsizey,
-                   r_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
-                   wsizex, wsizey,
-                   GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
-    fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO issue (red band)\n" ANSI_COLOR_RESET);
-    exit(-1);
+    if (GDALRasterIO(r_band, GF_Read,
+                     startx, starty, rsizex, rsizey,
+                     r_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
+                     wsizex, wsizey,
+                     GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
+      fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO issue (red band)\n" ANSI_COLOR_RESET);
+      exit(-1);
+    }
+    if (GDALRasterIO(g_band, GF_Read,
+                     startx, starty, rsizex, rsizey,
+                     g_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
+                     wsizex, wsizey,
+                     GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
+      fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO issue (green band)\n" ANSI_COLOR_RESET);
+      exit(-1);
+    }
+    if (GDALRasterIO(b_band, GF_Read,
+                     startx, starty, rsizex, rsizey,
+                     b_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
+                     wsizex, wsizey,
+                     GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
+      fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO issue (blue band)\n" ANSI_COLOR_RESET);
+      exit(-1);
+    }
   }
-  if (GDALRasterIO(g_band, GF_Read,
-                   startx, starty, rsizex, rsizey,
-                   g_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
-                   wsizex, wsizey,
-                   GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
-    fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO issue (green band)\n" ANSI_COLOR_RESET);
-    exit(-1);
-  }
-  if (GDALRasterIO(b_band, GF_Read,
-                   startx, starty, rsizex, rsizey,
-                   b_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
-                   wsizex, wsizey,
-                   GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
-    fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO issue (blue band)\n" ANSI_COLOR_RESET);
-    exit(-1);
-  }
-  write_png("/tmp/texture.png", r_texture, g_texture, b_texture, TEXTURE_BUFFER_SIZE, TEXTURE_BUFFER_SIZE);
 
-  /* free */
+  /* Sample from the texture */
+  tile = calloc(TILE_SIZE*TILE_SIZE*4, sizeof(*tile));
+  for (int j = 0; j < TILE_SIZE; ++j) {
+    for (int i = 0; i < TILE_SIZE; ++i) {
+      int u, v;
+      double _u, _v;
+      uint16_t dword = 0;
+      _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
+      _u = (_u - xmin)/(xmax-xmin);
+      _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
+      _v = (_v - ymin)/(ymax-ymin);
+      u = (int)(_u * TEXTURE_BUFFER_SIZE);
+      v = (int)(_v * TEXTURE_BUFFER_SIZE);
+      dword |= tile[4*i + 4*j*TILE_SIZE + 0] = htons(r_texture[u + v*TEXTURE_BUFFER_SIZE]);
+      dword |= tile[4*i + 4*j*TILE_SIZE + 1] = htons(g_texture[u + v*TEXTURE_BUFFER_SIZE]);
+      dword |= tile[4*i + 4*j*TILE_SIZE + 2] = htons(b_texture[u + v*TEXTURE_BUFFER_SIZE]);
+      tile[4*i + 4*j*TILE_SIZE + 3] = (dword ? -1 : 0);
+    }
+  }
+
+  write_png("/tmp/tile.png", tile, TILE_SIZE, TILE_SIZE);
+
+  free(tile);
   free(b_texture);
   free(g_texture);
   free(r_texture);
@@ -296,4 +256,12 @@ void zxy(int z, int _x, int _y)
   free(left);
   free(bot);
   free(top);
+}
+
+void world_to_image(double * xy)
+{
+  double world_x = xy[0], world_y = xy[1];
+
+  xy[0] = (-world_x*t[5] + world_y*t[2] + t[0]*t[5] - t[2]*t[3])/(t[2]*t[4] - t[1]*t[5]);
+  xy[1] = (world_x*t[4] - world_y*t[1] + t[0]*t[4] + t[1]*t[3])/(t[2]*t[4] - t[1]*t[5]);
 }

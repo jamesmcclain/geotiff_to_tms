@@ -29,13 +29,11 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include "load.h"
 
+#ifndef __LOAD_H__
+#define __LOAD_H__
 
-int main(int argc, const char ** argv)
-{
-  load();
-  zxy(9,380,224);
-  return 0;
-}
+void load();
+void zxy(int z, int _x, int _y);
+
+#endif

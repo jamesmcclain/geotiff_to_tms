@@ -29,13 +29,11 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include "load.h"
+#include <stdint.h>
 
+#ifndef __PNGWRITE_H__
+#define __PNGWRITE_H__
 
-int main(int argc, const char ** argv)
-{
-  load();
-  zxy(9,380,224);
-  return 0;
-}
+void write_png(char *file_name, const uint16_t * tile, int width, int height);
+
+#endif
