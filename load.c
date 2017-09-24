@@ -32,9 +32,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <arpa/inet.h>
 #include <float.h>
 #include <math.h>
-#include <arpa/inet.h>
 #include "gdal.h"
 #include "cpl_conv.h"
 #include "ogr_srs_api.h"
@@ -84,7 +84,7 @@ void load()
   g_dataset = GDALOpen(g_filename, GA_ReadOnly);
   b_dataset = GDALOpen(b_filename, GA_ReadOnly);
   if(r_dataset == NULL) {
-    fprintf(stderr, ANSI_COLOR_RED "GDALOpen issue\n" ANSI_COLOR_RESET);
+    fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
   r_band = GDALGetRasterBand(r_dataset, 1);
@@ -97,10 +97,10 @@ void load()
   srs = OSRNewSpatialReference(NULL);
   wkt = calloc(STRING_BUFFER_SIZE, sizeof(char));
   strncpy(wkt, GDALGetProjectionRef(r_dataset), STRING_BUFFER_SIZE);
-  /* fprintf(stderr, ANSI_COLOR_GREEN "WKT: " ANSI_COLOR_CYAN "%s\n" ANSI_COLOR_RESET, wkt); */
+  /* fprintf(stderr, ANSI_COLOR_GREEN "WKT: " ANSI_COLOR_CYAN "%s" ANSI_COLOR_RESET "\n", wkt); */
   OSRImportFromWkt(srs, &wkt);
   OSRExportToProj4(srs, &dstProj4);
-  /* fprintf(stderr, ANSI_COLOR_GREEN "Proj4: " ANSI_COLOR_CYAN "%s\n" ANSI_COLOR_RESET, dstProj4); */
+  /* fprintf(stderr, ANSI_COLOR_GREEN "Proj4: " ANSI_COLOR_CYAN "%s" ANSI_COLOR_RESET "\n", dstProj4); */
 
   src = pj_init_plus(latlng);
   dst = pj_init_plus(dstProj4);
@@ -205,7 +205,7 @@ void zxy(int fd, int z, int _x, int _y)
                      r_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
                      wsizex, wsizey,
                      GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
-      fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO issue (red band)\n" ANSI_COLOR_RESET);
+      fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (red band)" ANSI_COLOR_RESET "\n");
       exit(-1);
     }
     if (GDALRasterIO(g_band, GF_Read,
@@ -213,7 +213,7 @@ void zxy(int fd, int z, int _x, int _y)
                      g_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
                      wsizex, wsizey,
                      GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
-      fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO issue (green band)\n" ANSI_COLOR_RESET);
+      fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (green band)" ANSI_COLOR_RESET "\n");
       exit(-1);
     }
     if (GDALRasterIO(b_band, GF_Read,
@@ -221,7 +221,7 @@ void zxy(int fd, int z, int _x, int _y)
                      b_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
                      wsizex, wsizey,
                      GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
-      fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO issue (blue band)\n" ANSI_COLOR_RESET);
+      fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (blue band)" ANSI_COLOR_RESET "\n");
       exit(-1);
     }
   }
@@ -248,6 +248,7 @@ void zxy(int fd, int z, int _x, int _y)
 
   write_png(fd, tile, TILE_SIZE, TILE_SIZE);
 
+  /* Cleanup */
   free(tile);
   free(b_texture);
   free(g_texture);

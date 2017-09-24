@@ -45,12 +45,12 @@ void write_png(int fd, const uint16_t * tile, int width, int height)
   png_color_8 sig_bit;
   png_bytep row_pointers[height];
 
-  fp = fdopen(fd, "wb");
+  fp = fdopen(fd, "w");
 
   png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   info_ptr = png_create_info_struct(png_ptr);
   if (setjmp(png_jmpbuf(png_ptr))) {
-    fprintf(stderr, ANSI_COLOR_RED "libpng issue\n" ANSI_COLOR_RESET);
+    fprintf(stderr, ANSI_COLOR_RED "libpng problem" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
 
