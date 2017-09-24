@@ -71,14 +71,17 @@ void write_png(char *file_name,
   png_structp png_ptr;
   png_infop info_ptr;
   png_color_8 sig_bit;
+  png_bytep row_pointers[height];
   uint16_t * tile = NULL;
 
-  tile = calloc(width*height*3, sizeof(*tile));
+  tile = calloc(width*height*4, sizeof(*tile));
   for (int j = 0; j < height; ++j) {
     for (int i = 0; i < width; ++i) {
-      tile[3*i + 3*j*width + 0] = htons(r_texture[i + j*width]);
-      tile[3*i + 3*j*width + 1] = htons(g_texture[i + j*width]);
-      tile[3*i + 3*j*width + 2] = htons(b_texture[i + j*width]);
+      uint64_t dword = 0;
+      dword |= tile[4*i + 4*j*width + 0] = htons(r_texture[i + j*width]);
+      dword |= tile[4*i + 4*j*width + 1] = htons(g_texture[i + j*width]);
+      dword |= tile[4*i + 4*j*width + 2] = htons(b_texture[i + j*width]);
+      tile[4*i + 4*j*width + 3] = (dword ? -1 : 0);
     }
   }
 
@@ -94,7 +97,7 @@ void write_png(char *file_name,
   png_init_io(png_ptr, fp);
   png_set_IHDR(png_ptr, info_ptr,
                width, height, 8*sizeof(*tile),
-               PNG_COLOR_TYPE_RGB,
+               PNG_COLOR_TYPE_RGBA,
                PNG_INTERLACE_NONE,
                PNG_COMPRESSION_TYPE_BASE,
                PNG_FILTER_TYPE_BASE);
@@ -102,22 +105,12 @@ void write_png(char *file_name,
   sig_bit.red   = 8*sizeof(*r_texture);
   sig_bit.green = 8*sizeof(*g_texture);
   sig_bit.blue  = 8*sizeof(*b_texture);
-  /* sig_bit.gray = 8*sizeof(*texture); */
-  /* sig_bit.alpha = 8; */
+  sig_bit.alpha = 8*sizeof(*tile);
   png_set_sBIT(png_ptr, info_ptr, &sig_bit);
   png_write_info(png_ptr, info_ptr);
-  /* png_set_invert_mono(png_ptr); */
-  /* png_set_shift(png_ptr, &sig_bit); */
-  /* png_set_packing(png_ptr); */
-  /* png_set_swap_alpha(png_ptr); */
-  /* png_set_filler(png_ptr, 0, PNG_FILLER_BEFORE); */
-  /* png_set_bgr(png_ptr); */
-  /* png_set_swap(png_ptr); */
-  /* png_set_packswap(png_ptr); */
 
-  png_bytep row_pointers[height];
   for (png_uint_32 i = 0; i < height; i++)
-    row_pointers[i] = (png_bytep)(tile + i*width*3);
+    row_pointers[i] = (png_bytep)(tile + i*width*4);
   png_write_image(png_ptr, row_pointers);
   png_write_end(png_ptr, info_ptr);
   png_destroy_write_struct(&png_ptr, &info_ptr);
@@ -146,9 +139,9 @@ void load()
   char g_filename[(1<<8)];
   char b_filename[(1<<8)];
 
-  sprintf(r_filename, filename, 1);
-  sprintf(g_filename, filename, 2);
-  sprintf(b_filename, filename, 3);
+  sprintf(r_filename, filename, 4);
+  sprintf(g_filename, filename, 3);
+  sprintf(b_filename, filename, 2);
 
   /* Dataset */
   r_dataset = GDALOpen(r_filename, GA_ReadOnly);
