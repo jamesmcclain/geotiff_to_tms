@@ -1,7 +1,7 @@
 GDAL_CFLAGS ?= $(shell gdal-config --cflags)
 GDAL_LDFLAGS ?= $(shell gdal-config --libs) $(shell gdal-config --dep-libs)
 CC = gcc
-CFLAGS ?= -Wall -march=native -mtune=native -g
+CFLAGS ?= -Wall -march=native -mtune=native -Ofast -g
 CFLAGS += -std=c11 $(GDAL_CFLAGS)
 LDFLAGS += -lproj $(GDAL_LDFLAGS)
 

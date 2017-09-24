@@ -43,6 +43,6 @@ int main(int argc, const char ** argv)
   init();
   load();
   zxy(9,380,224);
-  /* zxy(9,377,226); */
+  /* zxy(9,380,228); */
   return 0;
 }
