@@ -45,6 +45,8 @@
 #include "ansi.h"
 #include "load.h"
 
+#define P (16)
+
 
 // http://localhost:8001/{z}/{x}/{y}.png
 int main(int argc, const char ** argv)
@@ -56,9 +58,6 @@ int main(int argc, const char ** argv)
   sa.sin_family = AF_INET;
   sa.sin_addr.s_addr = htonl(INADDR_ANY);
   sa.sin_port = htons(8001);
-
-  /* Initialize backend */
-  load(1);
 
 #if 0
   {
@@ -88,6 +87,16 @@ int main(int argc, const char ** argv)
     close(fd1);
     exit(-1);
   }
+
+  for (int i = 0; (i < P-1) && fork(); ++i);
+
+  /* Initialize backend */
+  load(1);
+
+  fprintf(stderr,
+          ANSI_COLOR_BLUE "pid=%d"
+          ANSI_COLOR_RESET "\n",
+          getpid());
 
   /* Handle requests */
   while (1) {
