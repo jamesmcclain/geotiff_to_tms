@@ -1,14 +1,14 @@
 GDAL_CFLAGS ?= $(shell gdal-config --cflags)
 GDAL_LDFLAGS ?= $(shell gdal-config --libs) $(shell gdal-config --dep-libs)
 CC = gcc
-CFLAGS ?= -Wall -march=native -mtune=native -Ofast -g
+CFLAGS ?= -Wall -march=native -mtune=native -ggdb3
 LDFLAGS += -lproj $(GDAL_LDFLAGS)
 
 
-all: moo
+all: server
 
-moo: main.o load.o pngwrite.o
-	$(CC) $(LDFLAGS) main.o load.o pngwrite.o -o $@
+server: server.o load.o pngwrite.o
+	$(CC) $(LDFLAGS) server.o load.o pngwrite.o -o $@
 
 load.o: load.c
 	$(CC) $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
@@ -23,6 +23,6 @@ clean:
 	rm -f *.o
 
 cleaner: clean
-	rm -f moo
+	rm -f server
 
 cleanest: cleaner
