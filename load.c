@@ -135,7 +135,7 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   right = calloc((TILE_SIZE<<1), sizeof(double));
 
   if (verbose)
-    fprintf(stderr, ANSI_COLOR_YELLOW "z=%d x=%d, y=%d" ANSI_COLOR_RESET "\n", z, _x, _y);
+    fprintf(stderr, ANSI_COLOR_YELLOW "start: z=%d x=%d, y=%d pid=%d" ANSI_COLOR_RESET "\n", z, _x, _y, getpid());
 
   /*
     TMS to Pseudo Web Mercator
@@ -217,6 +217,11 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
     wsizex = (int)(wsizex * (rsizex/(xmax-xmin)));
     wsizey = (int)(wsizey * (rsizey/(ymax-ymin)));
 
+    tile = calloc(TILE_SIZE*TILE_SIZE*4, sizeof(*tile));
+
+    if (!rsizex || !rsizey || !wsizex || !wsizey)
+      goto done;
+
     if (verbose) {
       fprintf(stderr,
               ANSI_COLOR_GREEN "X "
@@ -257,7 +262,6 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   }
 
   /* Sample from the texture */
-  tile = calloc(TILE_SIZE*TILE_SIZE*4, sizeof(*tile));
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       double _u, _v;
@@ -275,6 +279,7 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
     }
   }
 
+ done:
   write_png(fd, tile, TILE_SIZE, TILE_SIZE);
 
   /* Cleanup */
@@ -286,6 +291,9 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   free(left);
   free(bot);
   free(top);
+
+  if (verbose)
+    fprintf(stderr, ANSI_COLOR_YELLOW "finish: z=%d x=%d, y=%d" ANSI_COLOR_RESET "\n", z, _x, _y);
 }
 
 uint8_t sigmoidal(uint16_t _u) {
