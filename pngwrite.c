@@ -37,7 +37,7 @@
 #include "pngwrite.h"
 
 
-void write_png(int fd, const uint16_t * tile, int width, int height)
+void write_png(int fd, const uint8_t * tile, int width, int height)
 {
   FILE *fp;
   png_structp png_ptr;

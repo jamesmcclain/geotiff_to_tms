@@ -59,6 +59,7 @@ double t[6];
 uint32_t width, height;
 
 void world_to_image(double * xy);
+uint8_t sigmoidal(uint16_t v);
 
 #define STRING_BUFFER_SIZE (1<<10)
 #define TILE_SIZE (1<<8)
@@ -126,7 +127,7 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   uint16_t * r_texture = NULL;
   uint16_t * g_texture = NULL;
   uint16_t * b_texture = NULL;
-  uint16_t * tile = NULL;
+  uint8_t * tile = NULL;
 
   top   = calloc((TILE_SIZE<<1), sizeof(double));
   bot   = calloc((TILE_SIZE<<1), sizeof(double));
@@ -161,7 +162,7 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
     left[i+1] = right[i+1] = (1 - 2*left[i+1]) * M_PI * RADIUS;
   }
 
-  /* longitude, latitude pairs to world coordinates */
+  /* Web Mercator to world coordinates */
   pj_transform(webmercator_pj, destination_pj, TILE_SIZE, 2, top, top+1, NULL);
   pj_transform(webmercator_pj, destination_pj, TILE_SIZE, 2, bot, bot+1, NULL);
   pj_transform(webmercator_pj, destination_pj, TILE_SIZE, 2, left, left+1, NULL);
@@ -259,20 +260,17 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   tile = calloc(TILE_SIZE*TILE_SIZE*4, sizeof(*tile));
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
-      int u, v;
       double _u, _v;
-      uint16_t dword = 0;
+      uint8_t byte = 0;
       _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
       _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
       if (!isnan(_u) && !isnan(_v)) {
-        _u = (_u - xmin)/(xmax-xmin);
-        _v = (_v - ymin)/(ymax-ymin);
-        u = (int)(_u * TEXTURE_BUFFER_SIZE);
-        v = (int)(_v * TEXTURE_BUFFER_SIZE);
-        dword |= tile[4*i + 4*j*TILE_SIZE + 0] = htons(r_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        dword |= tile[4*i + 4*j*TILE_SIZE + 1] = htons(g_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        dword |= tile[4*i + 4*j*TILE_SIZE + 2] = htons(b_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        tile[4*i + 4*j*TILE_SIZE + 3] = (dword ? -1 : 0);
+        int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
+        int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
+        byte |= tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(r_texture[u + v*TEXTURE_BUFFER_SIZE]);
+        byte |= tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(g_texture[u + v*TEXTURE_BUFFER_SIZE]);
+        byte |= tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(b_texture[u + v*TEXTURE_BUFFER_SIZE]);
+        tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
       }
     }
   }
@@ -288,6 +286,17 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   free(left);
   free(bot);
   free(top);
+}
+
+uint8_t sigmoidal(uint16_t _u) {
+  if (!_u) return 0;
+
+  double u = ((double)_u) / 23130.235294118;
+  double beta = 10, alpha = 0.50;
+  double numer = 1/(1+exp(beta*(alpha-u))) - 1/(1+exp(beta));
+  double denom = 1/(1+exp(beta*(alpha-1))) - 1/(1+exp(beta*alpha));
+  double gu = fmax(0.0, fmin(1.0, numer / denom));
+  return ((1<<8)-1)*gu;
 }
 
 void world_to_image(double * xy)
