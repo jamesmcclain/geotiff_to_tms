@@ -46,6 +46,7 @@
 #include "load.h"
 
 
+// http://localhost:8001/{z}/{x}/{y}.png
 int main(int argc, const char ** argv)
 {
   struct sockaddr_in sa;
@@ -57,13 +58,15 @@ int main(int argc, const char ** argv)
   sa.sin_port = htons(8001);
 
   /* Initialize backend */
-  load();
+  load(1);
 
+  #if 0
   {
     int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    zxy(fd, 2, 1, 1);
+    zxy(fd, 3, 5, 3, 1);
     fsync(fd); close(fd);
   }
+  #endif
 
   /* Create socket */
   if ((fd1 = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
@@ -102,20 +105,13 @@ int main(int argc, const char ** argv)
 
     read(fd2, buffer, sizeof(buffer));
     sscanf(buffer, "GET /%d/%d/%d.png HTTP/1.1", &z, &x, &y);
-    fprintf(stderr, "z=%d x=%d y=%d\n", z, x, y);
     write(fd2, twohundred, strlen(twohundred));
-    zxy(fd2, z, x, y);
+    zxy(fd2, z, x, y, 1);
 
     fsync(fd2); shutdown(fd2, SHUT_RDWR); close(fd2);
   }
 
   fsync(fd1); shutdown(fd1, SHUT_RDWR); close(fd1);
-
-  /* fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR); */
-  /* time_t t1 = time(NULL); */
-  /* fprintf(stderr, "%ld\n", time(NULL) - t1); */
-
-  /* zxy(fd, 9+1,380*2,224*2); */
 
   return 0;
 }

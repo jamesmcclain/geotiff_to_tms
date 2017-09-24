@@ -33,7 +33,7 @@
 #ifndef __LOAD_H__
 #define __LOAD_H__
 
-void load();
-void zxy(int fd, int z, int _x, int _y);
+void load(int verbose);
+void zxy(int fd, int z, int _x, int _y, int verbose);
 
 #endif
