@@ -37,7 +37,7 @@
 #include "pngwrite.h"
 
 
-void write_png(char *file_name, const uint16_t * tile, int width, int height)
+void write_png(int fd, const uint16_t * tile, int width, int height)
 {
   FILE *fp;
   png_structp png_ptr;
@@ -45,7 +45,7 @@ void write_png(char *file_name, const uint16_t * tile, int width, int height)
   png_color_8 sig_bit;
   png_bytep row_pointers[height];
 
-  fp = fopen(file_name, "wb");
+  fp = fdopen(fd, "wb");
 
   png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   info_ptr = png_create_info_struct(png_ptr);
@@ -75,5 +75,5 @@ void write_png(char *file_name, const uint16_t * tile, int width, int height)
   png_write_end(png_ptr, info_ptr);
   png_destroy_write_struct(&png_ptr, &info_ptr);
 
-  fclose(fp);
+  fflush(fp);
 }

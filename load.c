@@ -112,7 +112,7 @@ void load()
   OSRRelease(srs);
 }
 
-void zxy(int z, int _x, int _y)
+void zxy(int fd, int z, int _x, int _y)
 {
   double * top;
   double * bot;
@@ -246,7 +246,7 @@ void zxy(int z, int _x, int _y)
     }
   }
 
-  write_png("/tmp/tile.png", tile, TILE_SIZE, TILE_SIZE);
+  write_png(fd, tile, TILE_SIZE, TILE_SIZE);
 
   free(tile);
   free(b_texture);

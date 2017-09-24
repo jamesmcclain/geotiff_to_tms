@@ -34,6 +34,6 @@
 #define __LOAD_H__
 
 void load();
-void zxy(int z, int _x, int _y);
+void zxy(int fd, int z, int _x, int _y);
 
 #endif

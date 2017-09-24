@@ -30,12 +30,25 @@
  */
 
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
 #include "load.h"
 
 
 int main(int argc, const char ** argv)
 {
+  int fd;
+
+  fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
   load();
-  zxy(9,380,224);
+
+  zxy(fd, 9,380,224);
+
+  fsync(fd);
+  close(fd);
+
   return 0;
 }

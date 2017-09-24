@@ -34,6 +34,6 @@
 #ifndef __PNGWRITE_H__
 #define __PNGWRITE_H__
 
-void write_png(char *file_name, const uint16_t * tile, int width, int height);
+void write_png(int fd, const uint16_t * tile, int width, int height);
 
 #endif
