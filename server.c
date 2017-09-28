@@ -45,7 +45,7 @@
 #include "ansi.h"
 #include "load.h"
 
-#define P (16)
+#define P (1<<5)
 
 
 // http://localhost:8001/{z}/{x}/{y}.png
@@ -60,14 +60,14 @@ int main(int argc, const char ** argv)
   sa.sin_port = htons(8001);
 
 #if 0
-  {
-    int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    zxy(fd, 3, 5, 3, 1);
-    /* zxy(fd, 10, 759, 448, 1); */
-    fsync(fd); close(fd);
-  }
+  load(1);
+  int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+  zxy(fd, 3, 5, 3, 1);
+  /* zxy(fd, 10, 759, 448, 1); */
+  fsync(fd); close(fd);
 #endif
 
+#if 1
   /* Create socket */
   if ((fd1 = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
     fprintf(stderr, ANSI_COLOR_RED "'socket(2)' problem" ANSI_COLOR_RESET "\n");
@@ -122,6 +122,7 @@ int main(int argc, const char ** argv)
   }
 
   fsync(fd1); shutdown(fd1, SHUT_RDWR); close(fd1);
+#endif
 
   return 0;
 }

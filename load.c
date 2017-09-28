@@ -63,6 +63,7 @@ double top[TILE_SIZE<<1];
 double bot[TILE_SIZE<<1];
 double left[TILE_SIZE<<1];
 double right[TILE_SIZE<<1];
+double patch [(TILE_SIZE*TILE_SIZE)<<1];
 uint16_t r_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
 uint16_t g_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
 uint16_t b_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
@@ -204,7 +205,10 @@ int fetch(double xmin, double xmax, double ymin, double ymax, int verbose)
 
 void zxy(int fd, int z, int _x, int _y, int verbose)
 {
-  zxy_approx(fd, z, _x, _y, verbose);
+  if (z < 7)
+    zxy_exact(fd, z, _x, _y, verbose);
+  else
+    zxy_approx(fd, z, _x, _y, verbose);
 }
 
 void zxy_exact(int fd, int z, int _x, int _y, int verbose)
@@ -219,44 +223,33 @@ void zxy_exact(int fd, int z, int _x, int _y, int verbose)
     TMS to Pseudo Web Mercator
     Source: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
   */
-  for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
-    // top, bottom longitudes
-    top[i+0] = _x + (i/(TILE_SIZE*2.0));     // tile space
-    top[i+0] /= pow(2.0, z);                 // 0-1 scaled, translated Web Mercator
-    top[i+0] = (2*top[i+0] - 1) * M_PI;      // Web Mercator in radians
-    top[i+0] = bot[i+0] = top[i+0] * RADIUS; // Web Mercator in radians*radius
-
-    // top, bottom latitudes
-    top[i+1] = (1 - 2*((_y+0) / pow(2.0, z))) * M_PI * RADIUS;
-    bot[i+1] = (1 - 2*((_y+1) / pow(2.0, z))) * M_PI * RADIUS;
-
-    // left, right longitudes
-    left[i+0]  = (2*((_x+0) / pow(2.0, z)) - 1) * M_PI * RADIUS;
-    right[i+0] = (2*((_x+1) / pow(2.0, z)) - 1) * M_PI * RADIUS;
-
-    // left, right latitudes
-    left[i+1] = _y + (i/(TILE_SIZE*2.0));
-    left[i+1] /= pow(2.0, z);
-    left[i+1] = right[i+1] = (1 - 2*left[i+1]) * M_PI * RADIUS;
+  for (int j = 0; j < TILE_SIZE; ++j) {
+    for (int i = 0; i < TILE_SIZE; ++i) {
+      int index = (i + j*TILE_SIZE)<<1;
+      patch[index+0] = _x + (i/((double)TILE_SIZE));           // tile space
+      patch[index+0] /= pow(2.0, z);                           // 0-1 scaled, translated Web Mercator
+      patch[index+0] = (2*patch[index+0] - 1) * M_PI * RADIUS; // Web Mercator
+      patch[index+1] = _y + (j/((double)TILE_SIZE));
+      patch[index+1] /= pow(2.0, z);
+      patch[index+1] = (1 - 2*patch[index+1]) * M_PI * RADIUS;
+    }
   }
 
   /* Web Mercator to world coordinates */
-  pj_transform(webmercator_pj, destination_pj, TILE_SIZE, 2, top, top+1, NULL);
-  pj_transform(webmercator_pj, destination_pj, TILE_SIZE, 2, bot, bot+1, NULL);
-  pj_transform(webmercator_pj, destination_pj, TILE_SIZE, 2, left, left+1, NULL);
-  pj_transform(webmercator_pj, destination_pj, TILE_SIZE, 2, right, right+1, NULL);
+  pj_transform(webmercator_pj, destination_pj, TILE_SIZE*TILE_SIZE, 2, patch, patch+1, NULL);
 
   /* world coordinates to image coordinates */
-  for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
-    world_to_image(top+i);
-    world_to_image(bot+i);
-    world_to_image(left+i);
-    world_to_image(right+i);
-    xmin = fmin(right[i], fmin(left[i], fmin(bot[i], fmin(top[i], xmin))));
-    xmax = fmax(right[i], fmax(left[i], fmax(bot[i], fmax(top[i], xmax))));
-    ymin = fmin(right[i+1], fmin(left[i+1], fmin(bot[i+1], fmin(top[i+1], ymin))));
-    ymax = fmax(right[i+1], fmax(left[i+1], fmax(bot[i+1], fmax(top[i+1], ymax))));
+  for (int j = 0; j < TILE_SIZE; ++j) {
+    for (int i = 0; i < TILE_SIZE; ++i) {
+      int index = (i + j*TILE_SIZE)<<1;
+      world_to_image(patch+index);
+      xmin = fmin(patch[index+0], xmin);
+      xmax = fmax(patch[index+0], xmax);
+      ymin = fmin(patch[index+1], ymin);
+      ymax = fmax(patch[index+1], ymax);
+    }
   }
+
   xmin = floor(xmin);
   xmax = ceil(xmax);
   ymin = floor(ymin);
@@ -270,8 +263,9 @@ void zxy_exact(int fd, int z, int _x, int _y, int verbose)
     for (int i = 0; i < TILE_SIZE; ++i) {
       double _u, _v;
       uint8_t byte = 0;
-      _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
-      _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
+      int index = (i + j*TILE_SIZE)<<1;
+      _u = patch[index+0];
+      _v = patch[index+1];
       if (!isnan(_u) && !isnan(_v)) {
         int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
         int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
