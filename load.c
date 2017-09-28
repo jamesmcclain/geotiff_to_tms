@@ -278,7 +278,7 @@ void zxy_exact(int fd, int z, int _x, int _y, int verbose)
   }
 
  done:
-  write_png(fd, tile, TILE_SIZE, TILE_SIZE);
+  write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 
   if (verbose)
     fprintf(stderr, ANSI_COLOR_YELLOW "finish: z=%d x=%d, y=%d" ANSI_COLOR_RESET "\n", z, _x, _y);
@@ -361,7 +361,7 @@ void zxy_approx(int fd, int z, int _x, int _y, int verbose)
   }
 
  done:
-  write_png(fd, tile, TILE_SIZE, TILE_SIZE);
+  write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 
   if (verbose)
     fprintf(stderr, ANSI_COLOR_YELLOW "finish: z=%d x=%d, y=%d" ANSI_COLOR_RESET "\n", z, _x, _y);
