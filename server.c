@@ -38,9 +38,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#include <signal.h>
+#include <sys/socket.h>
 
 #include "ansi.h"
 #include "load.h"
@@ -88,6 +89,7 @@ int main(int argc, const char ** argv)
     exit(-1);
   }
 
+  signal(SIGPIPE, SIG_IGN);
   for (int i = 0; (i < P-1) && fork(); ++i);
 
   /* Initialize backend */
