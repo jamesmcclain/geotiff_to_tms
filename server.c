@@ -55,10 +55,19 @@ int main(int argc, const char ** argv)
   struct sockaddr_in sa;
   int fd1, fd2;
   uint8_t yes = 1;
+  int p = P;
 
   sa.sin_family = AF_INET;
   sa.sin_addr.s_addr = htonl(INADDR_ANY);
   sa.sin_port = htons(8001);
+
+  /* Number of servers to prefork */
+  if (argc > 1)
+    sscanf(argv[1], "%d", &p);
+  fprintf(stderr,
+          ANSI_COLOR_GREEN "P=%d"
+          ANSI_COLOR_RESET "\n",
+          p);
 
 #if 0
   load(1);
@@ -90,7 +99,7 @@ int main(int argc, const char ** argv)
   }
 
   signal(SIGPIPE, SIG_IGN);
-  for (int i = 0; (i < P-1) && fork(); ++i);
+  for (int i = 0; (i < p-1) && fork(); ++i);
 
   /* Initialize backend */
   load(1);
