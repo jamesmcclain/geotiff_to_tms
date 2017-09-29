@@ -10,7 +10,7 @@ all: server
 server: server.o load.o pngwrite.o
 	$(CC) $(LDFLAGS) server.o load.o pngwrite.o -o $@
 
-load.o: load.c
+load.o: load.c constants.h
 	$(CC) $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
 
 %.o: %.c %.h
