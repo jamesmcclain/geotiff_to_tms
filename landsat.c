@@ -51,6 +51,7 @@
 const char * webmercator = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs";
 projPJ webmercator_pj = NULL;
 landsat_scene * scene = NULL;
+int scene_count = 3;
 uint8_t tile[TILE_SIZE * TILE_SIZE * 4]; // RGBA ergo 4
 
 void load_scene(landsat_scene * s, int verbose);
@@ -60,20 +61,23 @@ void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose);
 uint8_t sigmoidal(uint16_t _u);
 void world_to_image(double * xy, landsat_scene * s);
 
+#define LARGER(a,b) (a = a > (b) ? a : (b))
 
 void load(int verbose)
 {
   GDALAllRegister();
 
-  scene = calloc(sizeof(landsat_scene), 2);
-  (scene + 0)->filename = "/tmp/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF";
-  (scene + 1)->filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
+  scene = calloc(sizeof(landsat_scene), scene_count);
+  (scene + 0)->filename = "/tmp/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF";
+  (scene + 1)->filename = "/tmp/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF";
+  (scene + 2)->filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
   /* (scene + 0)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B1.TIF"; */
   /* (scene + 1)->filename = "/vsicurl/https://landsat-pds.s3.amazonaws.com/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
+  /* (scene + 2)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
 
   webmercator_pj = pj_init_plus(webmercator);
-  load_scene(scene + 0, verbose);
-  load_scene(scene + 1, verbose);
+  for (int i = 0; i < scene_count; ++i)
+    load_scene(scene + i, verbose);
 }
 
 void load_scene(landsat_scene * s, int verbose)
@@ -215,12 +219,12 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   memset(tile, 0, sizeof(tile));
 
   if (z < 7) {
-    zxy_exact(fd, z, _x, _y, scene + 0, verbose);
-    zxy_exact(fd, z, _x, _y, scene + 1, verbose);
+    for (int i = 0; i < scene_count; ++i)
+      zxy_exact(fd, z, _x, _y, scene + i, verbose);
   }
   else {
-    zxy_approx(fd, z, _x, _y, scene + 0, verbose);
-    zxy_approx(fd, z, _x, _y, scene + 1, verbose);
+    for (int i = 0; i < scene_count; ++i)
+      zxy_approx(fd, z, _x, _y, scene + i, verbose);
   }
 
   write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
@@ -282,18 +286,21 @@ void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
     for (int j = 0; j < TILE_SIZE; ++j) {
       for (int i = 0; i < TILE_SIZE; ++i) {
         double _u, _v;
-        uint8_t byte = 0;
+        uint8_t red, byte = 0;
         int index = (i + j*TILE_SIZE)<<1;
         _u = patch[index+0];
         _v = patch[index+1];
         if (!isnan(_u) && !isnan(_v)) {
           int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
           int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
-          if (tile[4*i + 4*j*TILE_SIZE + 3] == 0) { // write into empty pixels
-            byte |= tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            byte |= tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            byte |= tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
+          int index = 4*i + 4*j*TILE_SIZE;
+
+          byte |= red = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
+          if (tile[index + 3] == 0 || tile[index + 0] < red) { // write into empty pixels
+            tile[index + 0] = red;
+            byte |= tile[index + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            byte |= tile[index + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            tile[index + 3] = (byte ? -1 : 0);
           }
         }
       }
@@ -369,17 +376,20 @@ void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
     for (int j = 0; j < TILE_SIZE; ++j) {
       for (int i = 0; i < TILE_SIZE; ++i) {
         double _u, _v;
-        uint8_t byte = 0;
+        uint8_t red, byte = 0;
         _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
         _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
         if (!isnan(_u) && !isnan(_v)) {
           int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
           int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
-          if (tile[4*i + 4*j*TILE_SIZE + 3] == 0) { // write into empty pixels
-            byte |= tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            byte |= tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            byte |= tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
+          int index = 4*i + 4*j*TILE_SIZE;
+
+          byte |= red = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
+          if (tile[index + 3] == 0 || tile[index + 0] < red) { // write into empty pixels
+            tile[index + 0] = red;
+            byte |= tile[index + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            byte |= tile[index + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            tile[index + 3] = (byte ? -1 : 0);
           }
         }
       }
