@@ -10,7 +10,7 @@ all: landsat-server
 landsat-server: server.o landsat.o pngwrite.o
 	$(CC) $(LDFLAGS) server.o landsat.o pngwrite.o -o $@
 
-landsat.o: landsat.c load.h constants.h
+landsat.o: landsat.c landsat.h load.h constants.h
 	$(CC) $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
 
 %.o: %.c %.h
