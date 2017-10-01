@@ -35,6 +35,18 @@
 #include "gdal.h"
 #include "proj_api.h"
 
+struct periphery_struct {
+  double top[TILE_SIZE<<1];
+  double bot[TILE_SIZE<<1];
+  double left[TILE_SIZE<<1];
+  double right[TILE_SIZE<<1];
+};
+
+union coordinates_struct {
+  struct periphery_struct periphery;
+  double patch [(TILE_SIZE*TILE_SIZE)<<1];
+};
+
 typedef struct landsat_scene_struct {
   // Filename
   const char * filename;
@@ -64,11 +76,7 @@ typedef struct landsat_scene_struct {
   double transform[6];
 
   // Coordinates
-  double top[TILE_SIZE<<1];
-  double bot[TILE_SIZE<<1];
-  double left[TILE_SIZE<<1];
-  double right[TILE_SIZE<<1];
-  double patch [(TILE_SIZE*TILE_SIZE)<<1];
+  union coordinates_struct coordinates;
 
   // Width, height
   uint32_t width, height;

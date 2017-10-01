@@ -218,6 +218,7 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
 
 void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
 {
+  double * patch = s->coordinates.patch;
   double xmin = DBL_MAX, ymin = DBL_MAX;
   double xmax = DBL_MIN, ymax = DBL_MIN;
 
@@ -231,29 +232,29 @@ void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE)<<1;
-      s->patch[index+0] = _x + (i/((double)TILE_SIZE));              // tile space
-      s->patch[index+0] /= pow(2.0, z);                              // 0-1 scaled, translated Web Mercator
-      s->patch[index+0] = (2*s->patch[index+0] - 1) * M_PI * RADIUS; // Web Mercator
-      s->patch[index+1] = _y + (j/((double)TILE_SIZE));
-      s->patch[index+1] /= pow(2.0, z);
-      s->patch[index+1] = (1 - 2*s->patch[index+1]) * M_PI * RADIUS;
+      patch[index+0] = _x + (i/((double)TILE_SIZE));           // tile space
+      patch[index+0] /= pow(2.0, z);                           // 0-1 scaled, translated Web Mercator
+      patch[index+0] = (2*patch[index+0] - 1) * M_PI * RADIUS; // Web Mercator
+      patch[index+1] = _y + (j/((double)TILE_SIZE));
+      patch[index+1] /= pow(2.0, z);
+      patch[index+1] = (1 - 2*patch[index+1]) * M_PI * RADIUS;
     }
   }
 
   /* Web Mercator to world coordinates */
   pj_transform(webmercator_pj, s->destination_pj,
                TILE_SIZE*TILE_SIZE, 2,
-               s->patch, s->patch+1, NULL);
+               patch, patch+1, NULL);
 
   /* world coordinates to image coordinates */
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE)<<1;
-      world_to_image(s->patch+index, s);
-      xmin = fmin(s->patch[index+0], xmin);
-      xmax = fmax(s->patch[index+0], xmax);
-      ymin = fmin(s->patch[index+1], ymin);
-      ymax = fmax(s->patch[index+1], ymax);
+      world_to_image(patch+index, s);
+      xmin = fmin(patch[index+0], xmin);
+      xmax = fmax(patch[index+0], xmax);
+      ymin = fmin(patch[index+1], ymin);
+      ymax = fmax(patch[index+1], ymax);
     }
   }
 
@@ -271,8 +272,8 @@ void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
       double _u, _v;
       uint8_t byte = 0;
       int index = (i + j*TILE_SIZE)<<1;
-      _u = s->patch[index+0];
-      _v = s->patch[index+1];
+      _u = patch[index+0];
+      _v = patch[index+1];
       if (!isnan(_u) && !isnan(_v)) {
         int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
         int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
@@ -293,6 +294,10 @@ void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
 
 void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
 {
+  double * top   = s->coordinates.periphery.top;
+  double * bot   = s->coordinates.periphery.bot;
+  double * left  = s->coordinates.periphery.left;
+  double * right = s->coordinates.periphery.right;
   double xmin = DBL_MAX, ymin = DBL_MAX;
   double xmax = DBL_MIN, ymax = DBL_MIN;
 
@@ -305,41 +310,41 @@ void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   */
   for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
     // top, bottom longitudes
-    s->top[i+0] = _x + (i/(TILE_SIZE*2.0));           // tile space
-    s->top[i+0] /= pow(2.0, z);                       // 0-1 scaled, translated Web Mercator
-    s->top[i+0] = (2*s->top[i+0] - 1) * M_PI;         // Web Mercator in radians
-    s->top[i+0] = s->bot[i+0] = s->top[i+0] * RADIUS; // Web Mercator in radians*radius
+    top[i+0] = _x + (i/(TILE_SIZE*2.0));           // tile space
+    top[i+0] /= pow(2.0, z);                       // 0-1 scaled, translated Web Mercator
+    top[i+0] = (2*top[i+0] - 1) * M_PI;         // Web Mercator in radians
+    top[i+0] = bot[i+0] = top[i+0] * RADIUS; // Web Mercator in radians*radius
 
     // top, bottom latitudes
-    s->top[i+1] = (1 - 2*((_y+0) / pow(2.0, z))) * M_PI * RADIUS;
-    s->bot[i+1] = (1 - 2*((_y+1) / pow(2.0, z))) * M_PI * RADIUS;
+    top[i+1] = (1 - 2*((_y+0) / pow(2.0, z))) * M_PI * RADIUS;
+    bot[i+1] = (1 - 2*((_y+1) / pow(2.0, z))) * M_PI * RADIUS;
 
     // left, right longitudes
-    s->left[i+0]  = (2*((_x+0) / pow(2.0, z)) - 1) * M_PI * RADIUS;
-    s->right[i+0] = (2*((_x+1) / pow(2.0, z)) - 1) * M_PI * RADIUS;
+    left[i+0]  = (2*((_x+0) / pow(2.0, z)) - 1) * M_PI * RADIUS;
+    right[i+0] = (2*((_x+1) / pow(2.0, z)) - 1) * M_PI * RADIUS;
 
     // left, right latitudes
-    s->left[i+1] = _y + (i/(TILE_SIZE*2.0));
-    s->left[i+1] /= pow(2.0, z);
-    s->left[i+1] = s->right[i+1] = (1 - 2*s->left[i+1]) * M_PI * RADIUS;
+    left[i+1] = _y + (i/(TILE_SIZE*2.0));
+    left[i+1] /= pow(2.0, z);
+    left[i+1] = right[i+1] = (1 - 2*left[i+1]) * M_PI * RADIUS;
   }
 
   /* Web Mercator to world coordinates */
-  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, s->top,   s->top+1, NULL);
-  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, s->bot,   s->bot+1, NULL);
-  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, s->left,  s->left+1, NULL);
-  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, s->right, s->right+1, NULL);
+  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, top,   top+1, NULL);
+  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, bot,   bot+1, NULL);
+  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, left,  left+1, NULL);
+  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, right, right+1, NULL);
 
   /* world coordinates to image coordinates */
   for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
-    world_to_image(s->top+i, s);
-    world_to_image(s->bot+i, s);
-    world_to_image(s->left+i, s);
-    world_to_image(s->right+i, s);
-    xmin = fmin(s->right[i], fmin(s->left[i], fmin(s->bot[i], fmin(s->top[i], xmin))));
-    xmax = fmax(s->right[i], fmax(s->left[i], fmax(s->bot[i], fmax(s->top[i], xmax))));
-    ymin = fmin(s->right[i+1], fmin(s->left[i+1], fmin(s->bot[i+1], fmin(s->top[i+1], ymin))));
-    ymax = fmax(s->right[i+1], fmax(s->left[i+1], fmax(s->bot[i+1], fmax(s->top[i+1], ymax))));
+    world_to_image(top+i, s);
+    world_to_image(bot+i, s);
+    world_to_image(left+i, s);
+    world_to_image(right+i, s);
+    xmin = fmin(right[i], fmin(left[i], fmin(bot[i], fmin(top[i], xmin))));
+    xmax = fmax(right[i], fmax(left[i], fmax(bot[i], fmax(top[i], xmax))));
+    ymin = fmin(right[i+1], fmin(left[i+1], fmin(bot[i+1], fmin(top[i+1], ymin))));
+    ymax = fmax(right[i+1], fmax(left[i+1], fmax(bot[i+1], fmax(top[i+1], ymax))));
   }
   xmin = floor(xmin);
   xmax = ceil(xmax);
@@ -354,8 +359,8 @@ void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
     for (int i = 0; i < TILE_SIZE; ++i) {
       double _u, _v;
       uint8_t byte = 0;
-      _u = s->top[2*i]*((double)j/TILE_SIZE) + s->bot[2*i]*(1-((double)j/TILE_SIZE));
-      _v = s->left[2*j+1]*((double)i/TILE_SIZE) + s->right[2*j+1]*(1-((double)i/TILE_SIZE));
+      _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
+      _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
       if (!isnan(_u) && !isnan(_v)) {
         int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
         int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
