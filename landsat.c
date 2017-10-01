@@ -87,17 +87,17 @@ void load_scene(landsat_scene * s, int verbose)
   /* Datasets and bands */
   s->r_dataset = GDALOpen(r_filename, GA_ReadOnly);
   if(s->r_dataset == NULL) {
-    fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (red band)" ANSI_COLOR_RESET "\n");
+    fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (red band band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
   s->g_dataset = GDALOpen(g_filename, GA_ReadOnly);
   if(s->g_dataset == NULL) {
-    fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (green)" ANSI_COLOR_RESET "\n");
+    fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (green band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
   s->b_dataset = GDALOpen(b_filename, GA_ReadOnly);
   if(s->b_dataset == NULL) {
-    fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (blue)" ANSI_COLOR_RESET "\n");
+    fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (blue band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
   s->r_band = GDALGetRasterBand(s->r_dataset, 1);
@@ -112,11 +112,11 @@ void load_scene(landsat_scene * s, int verbose)
   wkt = calloc(STRING_BUFFER_SIZE, sizeof(char)); // No memory leak, this is freed from within `OSRImportFromWkt`!
   strncpy(wkt, GDALGetProjectionRef(s->r_dataset), STRING_BUFFER_SIZE);
   if (verbose)
-    fprintf(stderr, ANSI_COLOR_GREEN "WKT: " ANSI_COLOR_CYAN "%s" ANSI_COLOR_RESET "\n", wkt);
+    fprintf(stderr, ANSI_COLOR_GREEN "WKT=%s" ANSI_COLOR_RESET "\n", wkt);
   OSRImportFromWkt(srs, &wkt);
   OSRExportToProj4(srs, &dstProj4);
   if (verbose)
-    fprintf(stderr, ANSI_COLOR_GREEN "Proj4: " ANSI_COLOR_CYAN "%s" ANSI_COLOR_RESET "\n", dstProj4);
+    fprintf(stderr, ANSI_COLOR_GREEN "Proj4=%s" ANSI_COLOR_RESET "\n", dstProj4);
 
   s->destination_pj = pj_init_plus(dstProj4);
 
@@ -126,6 +126,9 @@ void load_scene(landsat_scene * s, int verbose)
 
   CPLFree(dstProj4);
   OSRRelease(srs);
+
+  if (verbose)
+    fprintf(stderr, ANSI_COLOR_BLUE "pid=%d" ANSI_COLOR_RESET "\n", getpid());
 }
 
 int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s, int verbose)
@@ -167,15 +170,13 @@ int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s,
 
   if (verbose) {
     fprintf(stderr,
-            ANSI_COLOR_GREEN "X "
-            ANSI_COLOR_CYAN "start: %d, rsize: %d, wsize: %d, delta: %d"
+            ANSI_COLOR_CYAN "startx=%d rsize=%d wsize=%d delta=%d pid=%d"
             ANSI_COLOR_RESET "\n",
-            startx, rsizex, wsizex, deltax);
+            startx, rsizex, wsizex, deltax, getpid());
     fprintf(stderr,
-            ANSI_COLOR_GREEN "Y "
-            ANSI_COLOR_CYAN "start: %d, rsize: %d, wsize: %d, delta: %d"
+            ANSI_COLOR_CYAN "starty=%d rsize=%d wsize=%d delta=%d pid=%d"
             ANSI_COLOR_RESET "\n",
-            starty, rsizey, wsizey, deltay);
+            starty, rsizey, wsizey, deltay, getpid());
   }
 
   if (GDALRasterIO(s->r_band, GF_Read,
@@ -223,7 +224,9 @@ void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   double xmax = DBL_MIN, ymax = DBL_MIN;
 
   if (verbose)
-    fprintf(stderr, ANSI_COLOR_YELLOW "start: z=%d x=%d, y=%d pid=%d" ANSI_COLOR_RESET "\n", z, _x, _y, getpid());
+    fprintf(stderr,
+            ANSI_COLOR_YELLOW "z=%d x=%d y=%d pid=%d" ANSI_COLOR_RESET "\n",
+            z, _x, _y, getpid());
 
   /*
     TMS to Pseudo Web Mercator
@@ -302,7 +305,9 @@ void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   double xmax = DBL_MIN, ymax = DBL_MIN;
 
   if (verbose)
-    fprintf(stderr, ANSI_COLOR_YELLOW "start: z=%d x=%d, y=%d pid=%d" ANSI_COLOR_RESET "\n", z, _x, _y, getpid());
+    fprintf(stderr,
+            ANSI_COLOR_YELLOW "z=%d x=%d y=%d pid=%d" ANSI_COLOR_RESET "\n",
+            z, _x, _y, getpid());
 
   /*
     TMS to Pseudo Web Mercator

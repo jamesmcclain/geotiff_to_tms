@@ -50,7 +50,7 @@ void write_png(int fd, const uint8_t * tile, int width, int height, int paranoid
   png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   info_ptr = png_create_info_struct(png_ptr);
   if (setjmp(png_jmpbuf(png_ptr))) {
-    fprintf(stderr, ANSI_COLOR_RED "libpng problem (probably broken pipe)" ANSI_COLOR_RESET "\n");
+    fprintf(stderr, ANSI_COLOR_YELLOW "libpng problem (probably broken pipe)" ANSI_COLOR_RESET "\n");
     if (paranoid)
       exit(-1);
     else
