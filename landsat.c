@@ -50,17 +50,29 @@
 
 const char * webmercator = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs";
 projPJ webmercator_pj = NULL;
-landsat_scene scene = {.filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"};
-/* landsat_scene scene = {.filename = "/vsicurl/https://landsat-pds.s3.amazonaws.com/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"}; */
+landsat_scene * scene = NULL;
 
-int fetch(double xmin, double xmax, double ymin, double ymax, int verbose);
-uint8_t sigmoidal(uint16_t v);
-void world_to_image(double * xy);
-void zxy_approx(int fd, int z, int _x, int _y, int verbose);
-void zxy_exact(int fd, int z, int _x, int _y, int verbose);
+void load_scene(landsat_scene * s, int verbose);
+int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s, int verbose);
+void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose);
+void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose);
+uint8_t sigmoidal(uint16_t _u);
+void world_to_image(double * xy, landsat_scene * s);
 
 
 void load(int verbose)
+{
+  GDALAllRegister();
+
+  scene = calloc(sizeof(landsat_scene), 1);
+  (scene + 0)->filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
+  /* (scene + 0)->filename = "/vsicurl/https://landsat-pds.s3.amazonaws.com/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
+
+  webmercator_pj = pj_init_plus(webmercator);
+  load_scene(scene + 0, verbose);
+}
+
+void load_scene(landsat_scene * s, int verbose)
 {
   char * wkt = NULL, * dstProj4 = NULL;
   OGRSpatialReferenceH srs = NULL;
@@ -68,39 +80,37 @@ void load(int verbose)
   char g_filename[(1<<8)];
   char b_filename[(1<<8)];
 
-  sprintf(r_filename, scene.filename, 4);
-  sprintf(g_filename, scene.filename, 3);
-  sprintf(b_filename, scene.filename, 2);
-
-  GDALAllRegister();
+  sprintf(r_filename, s->filename, 4);
+  sprintf(g_filename, s->filename, 3);
+  sprintf(b_filename, s->filename, 2);
 
   /* Datasets and bands */
-  scene.r_dataset = GDALOpen(r_filename, GA_ReadOnly);
-  if(scene.r_dataset == NULL) {
+  s->r_dataset = GDALOpen(r_filename, GA_ReadOnly);
+  if(s->r_dataset == NULL) {
     fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (red band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
-  scene.g_dataset = GDALOpen(g_filename, GA_ReadOnly);
-  if(scene.g_dataset == NULL) {
+  s->g_dataset = GDALOpen(g_filename, GA_ReadOnly);
+  if(s->g_dataset == NULL) {
     fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (green)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
-  scene.b_dataset = GDALOpen(b_filename, GA_ReadOnly);
-  if(scene.b_dataset == NULL) {
+  s->b_dataset = GDALOpen(b_filename, GA_ReadOnly);
+  if(s->b_dataset == NULL) {
     fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (blue)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
-  scene.r_band = GDALGetRasterBand(scene.r_dataset, 1);
-  scene.g_band = GDALGetRasterBand(scene.g_dataset, 1);
-  scene.b_band = GDALGetRasterBand(scene.b_dataset, 1);
-  scene.width  = GDALGetRasterXSize(scene.r_dataset);
-  scene.height = GDALGetRasterYSize(scene.r_dataset);
+  s->r_band = GDALGetRasterBand(s->r_dataset, 1);
+  s->g_band = GDALGetRasterBand(s->g_dataset, 1);
+  s->b_band = GDALGetRasterBand(s->b_dataset, 1);
+  s->width  = GDALGetRasterXSize(s->r_dataset);
+  s->height = GDALGetRasterYSize(s->r_dataset);
 
   /* SRS.  This is from the red band, but is assumed to be valid for
      all of the bands. */
   srs = OSRNewSpatialReference(NULL);
   wkt = calloc(STRING_BUFFER_SIZE, sizeof(char)); // No memory leak, this is freed from within `OSRImportFromWkt`!
-  strncpy(wkt, GDALGetProjectionRef(scene.r_dataset), STRING_BUFFER_SIZE);
+  strncpy(wkt, GDALGetProjectionRef(s->r_dataset), STRING_BUFFER_SIZE);
   if (verbose)
     fprintf(stderr, ANSI_COLOR_GREEN "WKT: " ANSI_COLOR_CYAN "%s" ANSI_COLOR_RESET "\n", wkt);
   OSRImportFromWkt(srs, &wkt);
@@ -108,28 +118,27 @@ void load(int verbose)
   if (verbose)
     fprintf(stderr, ANSI_COLOR_GREEN "Proj4: " ANSI_COLOR_CYAN "%s" ANSI_COLOR_RESET "\n", dstProj4);
 
-  webmercator_pj = pj_init_plus(webmercator);
-  scene.destination_pj = pj_init_plus(dstProj4);
+  s->destination_pj = pj_init_plus(dstProj4);
 
   /* Transform.  This is from the red band, but is assumed to be valid
      for all of the bands. */
-  GDALGetGeoTransform(scene.r_dataset, scene.transform);
+  GDALGetGeoTransform(s->r_dataset, s->transform);
 
   CPLFree(dstProj4);
   OSRRelease(srs);
 }
 
-int fetch(double xmin, double xmax, double ymin, double ymax, int verbose)
+int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s, int verbose)
 {
   int startx = (int)xmin, starty = (int)ymin;
   int rsizex = (int)(xmax-xmin), rsizey = (int)(ymax-ymin);
   int wsizex = TEXTURE_BUFFER_SIZE, wsizey = TEXTURE_BUFFER_SIZE;
   int deltax = 0, deltay = 0;
 
-  memset(scene.tile, 0, sizeof(scene.tile));
-  memset(scene.r_texture, 0, sizeof(scene.r_texture));
-  memset(scene.g_texture, 0, sizeof(scene.g_texture));
-  memset(scene.b_texture, 0, sizeof(scene.b_texture));
+  memset(s->tile, 0, sizeof(s->tile));
+  memset(s->r_texture, 0, sizeof(s->r_texture));
+  memset(s->g_texture, 0, sizeof(s->g_texture));
+  memset(s->b_texture, 0, sizeof(s->b_texture));
 
   if (startx < 0) {
     rsizex += startx;
@@ -141,12 +150,12 @@ int fetch(double xmin, double xmax, double ymin, double ymax, int verbose)
     starty = 0;
     deltay = TEXTURE_BUFFER_SIZE-(int)(wsizey * (rsizey/(ymax-ymin)));
   }
-  if (startx + rsizex > scene.width) {
-    rsizex = scene.width - startx;
+  if (startx + rsizex > s->width) {
+    rsizex = s->width - startx;
     rsizex = rsizex > 0? rsizex : 0;
   }
-  if (starty + rsizey > scene.height) {
-    rsizey = scene.height - starty;
+  if (starty + rsizey > s->height) {
+    rsizey = s->height - starty;
     rsizey = rsizey > 0? rsizey : 0;
   }
 
@@ -169,25 +178,25 @@ int fetch(double xmin, double xmax, double ymin, double ymax, int verbose)
             starty, rsizey, wsizey, deltay);
   }
 
-  if (GDALRasterIO(scene.r_band, GF_Read,
+  if (GDALRasterIO(s->r_band, GF_Read,
                    startx, starty, rsizex, rsizey,
-                   scene.r_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
+                   s->r_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
                    wsizex, wsizey,
                    GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (red band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
-  if (GDALRasterIO(scene.g_band, GF_Read,
+  if (GDALRasterIO(s->g_band, GF_Read,
                    startx, starty, rsizex, rsizey,
-                   scene.g_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
+                   s->g_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
                    wsizex, wsizey,
                    GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (green band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
-  if (GDALRasterIO(scene.b_band, GF_Read,
+  if (GDALRasterIO(s->b_band, GF_Read,
                    startx, starty, rsizex, rsizey,
-                   scene.b_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
+                   s->b_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
                    wsizex, wsizey,
                    GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (blue band)" ANSI_COLOR_RESET "\n");
@@ -199,13 +208,15 @@ int fetch(double xmin, double xmax, double ymin, double ymax, int verbose)
 
 void zxy(int fd, int z, int _x, int _y, int verbose)
 {
+  landsat_scene * s = scene;
+
   if (z < 7)
-    zxy_exact(fd, z, _x, _y, verbose);
+    zxy_exact(fd, z, _x, _y, s, verbose);
   else
-    zxy_approx(fd, z, _x, _y, verbose);
+    zxy_approx(fd, z, _x, _y, s, verbose);
 }
 
-void zxy_exact(int fd, int z, int _x, int _y, int verbose)
+void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
 {
   double xmin = DBL_MAX, ymin = DBL_MAX;
   double xmax = DBL_MIN, ymax = DBL_MIN;
@@ -220,29 +231,29 @@ void zxy_exact(int fd, int z, int _x, int _y, int verbose)
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE)<<1;
-      scene.patch[index+0] = _x + (i/((double)TILE_SIZE));           // tile space
-      scene.patch[index+0] /= pow(2.0, z);                           // 0-1 scaled, translated Web Mercator
-      scene.patch[index+0] = (2*scene.patch[index+0] - 1) * M_PI * RADIUS; // Web Mercator
-      scene.patch[index+1] = _y + (j/((double)TILE_SIZE));
-      scene.patch[index+1] /= pow(2.0, z);
-      scene.patch[index+1] = (1 - 2*scene.patch[index+1]) * M_PI * RADIUS;
+      s->patch[index+0] = _x + (i/((double)TILE_SIZE));              // tile space
+      s->patch[index+0] /= pow(2.0, z);                              // 0-1 scaled, translated Web Mercator
+      s->patch[index+0] = (2*s->patch[index+0] - 1) * M_PI * RADIUS; // Web Mercator
+      s->patch[index+1] = _y + (j/((double)TILE_SIZE));
+      s->patch[index+1] /= pow(2.0, z);
+      s->patch[index+1] = (1 - 2*s->patch[index+1]) * M_PI * RADIUS;
     }
   }
 
   /* Web Mercator to world coordinates */
-  pj_transform(webmercator_pj, scene.destination_pj,
+  pj_transform(webmercator_pj, s->destination_pj,
                TILE_SIZE*TILE_SIZE, 2,
-               scene.patch, scene.patch+1, NULL);
+               s->patch, s->patch+1, NULL);
 
   /* world coordinates to image coordinates */
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE)<<1;
-      world_to_image(scene.patch+index);
-      xmin = fmin(scene.patch[index+0], xmin);
-      xmax = fmax(scene.patch[index+0], xmax);
-      ymin = fmin(scene.patch[index+1], ymin);
-      ymax = fmax(scene.patch[index+1], ymax);
+      world_to_image(s->patch+index, s);
+      xmin = fmin(s->patch[index+0], xmin);
+      xmax = fmax(s->patch[index+0], xmax);
+      ymin = fmin(s->patch[index+1], ymin);
+      ymax = fmax(s->patch[index+1], ymax);
     }
   }
 
@@ -252,35 +263,35 @@ void zxy_exact(int fd, int z, int _x, int _y, int verbose)
   ymax = ceil(ymax);
 
   /* Read clipped textures from image */
-  if (!fetch(xmin, xmax, ymin, ymax, verbose)) goto done;
+  if (!fetch(xmin, xmax, ymin, ymax, s, verbose)) goto done;
 
-  /* Sample from the texture */
+  /* Sample from the textures */
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       double _u, _v;
       uint8_t byte = 0;
       int index = (i + j*TILE_SIZE)<<1;
-      _u = scene.patch[index+0];
-      _v = scene.patch[index+1];
+      _u = s->patch[index+0];
+      _v = s->patch[index+1];
       if (!isnan(_u) && !isnan(_v)) {
         int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
         int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
-        byte |= scene.tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(scene.r_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        byte |= scene.tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(scene.g_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        byte |= scene.tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(scene.b_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        scene.tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
+        byte |= s->tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
+        byte |= s->tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
+        byte |= s->tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
+        s->tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
       }
     }
   }
 
  done:
-  write_png(fd, scene.tile, TILE_SIZE, TILE_SIZE, 0);
+  write_png(fd, s->tile, TILE_SIZE, TILE_SIZE, 0);
 
   if (verbose)
     fprintf(stderr, ANSI_COLOR_YELLOW "finish: z=%d x=%d, y=%d" ANSI_COLOR_RESET "\n", z, _x, _y);
 }
 
-void zxy_approx(int fd, int z, int _x, int _y, int verbose)
+void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
 {
   double xmin = DBL_MAX, ymin = DBL_MAX;
   double xmax = DBL_MIN, ymax = DBL_MIN;
@@ -294,41 +305,41 @@ void zxy_approx(int fd, int z, int _x, int _y, int verbose)
   */
   for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
     // top, bottom longitudes
-    scene.top[i+0] = _x + (i/(TILE_SIZE*2.0));     // tile space
-    scene.top[i+0] /= pow(2.0, z);                 // 0-1 scaled, translated Web Mercator
-    scene.top[i+0] = (2*scene.top[i+0] - 1) * M_PI;      // Web Mercator in radians
-    scene.top[i+0] = scene.bot[i+0] = scene.top[i+0] * RADIUS; // Web Mercator in radians*radius
+    s->top[i+0] = _x + (i/(TILE_SIZE*2.0));           // tile space
+    s->top[i+0] /= pow(2.0, z);                       // 0-1 scaled, translated Web Mercator
+    s->top[i+0] = (2*s->top[i+0] - 1) * M_PI;         // Web Mercator in radians
+    s->top[i+0] = s->bot[i+0] = s->top[i+0] * RADIUS; // Web Mercator in radians*radius
 
     // top, bottom latitudes
-    scene.top[i+1] = (1 - 2*((_y+0) / pow(2.0, z))) * M_PI * RADIUS;
-    scene.bot[i+1] = (1 - 2*((_y+1) / pow(2.0, z))) * M_PI * RADIUS;
+    s->top[i+1] = (1 - 2*((_y+0) / pow(2.0, z))) * M_PI * RADIUS;
+    s->bot[i+1] = (1 - 2*((_y+1) / pow(2.0, z))) * M_PI * RADIUS;
 
     // left, right longitudes
-    scene.left[i+0]  = (2*((_x+0) / pow(2.0, z)) - 1) * M_PI * RADIUS;
-    scene.right[i+0] = (2*((_x+1) / pow(2.0, z)) - 1) * M_PI * RADIUS;
+    s->left[i+0]  = (2*((_x+0) / pow(2.0, z)) - 1) * M_PI * RADIUS;
+    s->right[i+0] = (2*((_x+1) / pow(2.0, z)) - 1) * M_PI * RADIUS;
 
     // left, right latitudes
-    scene.left[i+1] = _y + (i/(TILE_SIZE*2.0));
-    scene.left[i+1] /= pow(2.0, z);
-    scene.left[i+1] = scene.right[i+1] = (1 - 2*scene.left[i+1]) * M_PI * RADIUS;
+    s->left[i+1] = _y + (i/(TILE_SIZE*2.0));
+    s->left[i+1] /= pow(2.0, z);
+    s->left[i+1] = s->right[i+1] = (1 - 2*s->left[i+1]) * M_PI * RADIUS;
   }
 
   /* Web Mercator to world coordinates */
-  pj_transform(webmercator_pj, scene.destination_pj, TILE_SIZE, 2, scene.top,   scene.top+1, NULL);
-  pj_transform(webmercator_pj, scene.destination_pj, TILE_SIZE, 2, scene.bot,   scene.bot+1, NULL);
-  pj_transform(webmercator_pj, scene.destination_pj, TILE_SIZE, 2, scene.left,  scene.left+1, NULL);
-  pj_transform(webmercator_pj, scene.destination_pj, TILE_SIZE, 2, scene.right, scene.right+1, NULL);
+  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, s->top,   s->top+1, NULL);
+  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, s->bot,   s->bot+1, NULL);
+  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, s->left,  s->left+1, NULL);
+  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, s->right, s->right+1, NULL);
 
   /* world coordinates to image coordinates */
   for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
-    world_to_image(scene.top+i);
-    world_to_image(scene.bot+i);
-    world_to_image(scene.left+i);
-    world_to_image(scene.right+i);
-    xmin = fmin(scene.right[i], fmin(scene.left[i], fmin(scene.bot[i], fmin(scene.top[i], xmin))));
-    xmax = fmax(scene.right[i], fmax(scene.left[i], fmax(scene.bot[i], fmax(scene.top[i], xmax))));
-    ymin = fmin(scene.right[i+1], fmin(scene.left[i+1], fmin(scene.bot[i+1], fmin(scene.top[i+1], ymin))));
-    ymax = fmax(scene.right[i+1], fmax(scene.left[i+1], fmax(scene.bot[i+1], fmax(scene.top[i+1], ymax))));
+    world_to_image(s->top+i, s);
+    world_to_image(s->bot+i, s);
+    world_to_image(s->left+i, s);
+    world_to_image(s->right+i, s);
+    xmin = fmin(s->right[i], fmin(s->left[i], fmin(s->bot[i], fmin(s->top[i], xmin))));
+    xmax = fmax(s->right[i], fmax(s->left[i], fmax(s->bot[i], fmax(s->top[i], xmax))));
+    ymin = fmin(s->right[i+1], fmin(s->left[i+1], fmin(s->bot[i+1], fmin(s->top[i+1], ymin))));
+    ymax = fmax(s->right[i+1], fmax(s->left[i+1], fmax(s->bot[i+1], fmax(s->top[i+1], ymax))));
   }
   xmin = floor(xmin);
   xmax = ceil(xmax);
@@ -336,34 +347,35 @@ void zxy_approx(int fd, int z, int _x, int _y, int verbose)
   ymax = ceil(ymax);
 
   /* Read clipped textures from image */
-  if (!fetch(xmin, xmax, ymin, ymax, verbose)) goto done;
+  if (!fetch(xmin, xmax, ymin, ymax, s, verbose)) goto done;
 
-  /* Sample from the texture */
+  /* Sample from the textures */
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       double _u, _v;
       uint8_t byte = 0;
-      _u = scene.top[2*i]*((double)j/TILE_SIZE) + scene.bot[2*i]*(1-((double)j/TILE_SIZE));
-      _v = scene.left[2*j+1]*((double)i/TILE_SIZE) + scene.right[2*j+1]*(1-((double)i/TILE_SIZE));
+      _u = s->top[2*i]*((double)j/TILE_SIZE) + s->bot[2*i]*(1-((double)j/TILE_SIZE));
+      _v = s->left[2*j+1]*((double)i/TILE_SIZE) + s->right[2*j+1]*(1-((double)i/TILE_SIZE));
       if (!isnan(_u) && !isnan(_v)) {
         int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
         int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
-        byte |= scene.tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(scene.r_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        byte |= scene.tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(scene.g_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        byte |= scene.tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(scene.b_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        scene.tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
+        byte |= s->tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
+        byte |= s->tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
+        byte |= s->tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
+        s->tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
       }
     }
   }
 
  done:
-  write_png(fd, scene.tile, TILE_SIZE, TILE_SIZE, 0);
+  write_png(fd, s->tile, TILE_SIZE, TILE_SIZE, 0);
 
   if (verbose)
     fprintf(stderr, ANSI_COLOR_YELLOW "finish: z=%d x=%d, y=%d" ANSI_COLOR_RESET "\n", z, _x, _y);
 }
 
-uint8_t sigmoidal(uint16_t _u) {
+uint8_t sigmoidal(uint16_t _u)
+{
   if (!_u) return 0;
 
   double u = ((double)_u) / 23130.235294118;
@@ -374,11 +386,11 @@ uint8_t sigmoidal(uint16_t _u) {
   return ((1<<8)-1)*gu;
 }
 
-void world_to_image(double * xy)
+void world_to_image(double * xy, landsat_scene * s)
 {
   double world_x = xy[0], world_y = xy[1];
 
   // Source: http://www.gdal.org/classGDALDataset.html#a5101119705f5fa2bc1344ab26f66fd1d
-  xy[0] = (-world_x*scene.transform[5] + world_y*scene.transform[2] + scene.transform[0]*scene.transform[5] - scene.transform[2]*scene.transform[3])/(scene.transform[2]*scene.transform[4] - scene.transform[1]*scene.transform[5]);
-  xy[1] = (world_x*scene.transform[4] - world_y*scene.transform[1] + scene.transform[0]*scene.transform[4] + scene.transform[1]*scene.transform[3])/(scene.transform[2]*scene.transform[4] - scene.transform[1]*scene.transform[5]);
+  xy[0] = (-world_x*s->transform[5] + world_y*s->transform[2] + s->transform[0]*s->transform[5] - s->transform[2]*s->transform[3])/(s->transform[2]*s->transform[4] - s->transform[1]*s->transform[5]);
+  xy[1] = (world_x*s->transform[4] - world_y*s->transform[1] + s->transform[0]*s->transform[4] + s->transform[1]*s->transform[3])/(s->transform[2]*s->transform[4] - s->transform[1]*s->transform[5]);
 }
