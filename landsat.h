@@ -35,6 +35,7 @@
 #include "gdal.h"
 #include "proj_api.h"
 
+
 struct periphery_struct {
   double top[TILE_SIZE<<1];
   double bot[TILE_SIZE<<1];
@@ -65,9 +66,6 @@ typedef struct landsat_scene_struct {
   uint16_t r_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
   uint16_t g_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
   uint16_t b_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
-
-  // Tile
-  uint8_t tile[TILE_SIZE * TILE_SIZE * 4]; // RGBA ergo 4
 
   // Projection
   projPJ destination_pj;

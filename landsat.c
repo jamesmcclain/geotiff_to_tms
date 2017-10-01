@@ -51,6 +51,7 @@
 const char * webmercator = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs";
 projPJ webmercator_pj = NULL;
 landsat_scene * scene = NULL;
+uint8_t tile[TILE_SIZE * TILE_SIZE * 4]; // RGBA ergo 4
 
 void load_scene(landsat_scene * s, int verbose);
 int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s, int verbose);
@@ -64,12 +65,15 @@ void load(int verbose)
 {
   GDALAllRegister();
 
-  scene = calloc(sizeof(landsat_scene), 1);
-  (scene + 0)->filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
-  /* (scene + 0)->filename = "/vsicurl/https://landsat-pds.s3.amazonaws.com/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
+  scene = calloc(sizeof(landsat_scene), 2);
+  (scene + 0)->filename = "/tmp/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF";
+  (scene + 1)->filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
+  /* (scene + 0)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B1.TIF"; */
+  /* (scene + 1)->filename = "/vsicurl/https://landsat-pds.s3.amazonaws.com/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
 
   webmercator_pj = pj_init_plus(webmercator);
   load_scene(scene + 0, verbose);
+  load_scene(scene + 1, verbose);
 }
 
 void load_scene(landsat_scene * s, int verbose)
@@ -138,7 +142,6 @@ int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s,
   int wsizex = TEXTURE_BUFFER_SIZE, wsizey = TEXTURE_BUFFER_SIZE;
   int deltax = 0, deltay = 0;
 
-  memset(s->tile, 0, sizeof(s->tile));
   memset(s->r_texture, 0, sizeof(s->r_texture));
   memset(s->g_texture, 0, sizeof(s->g_texture));
   memset(s->b_texture, 0, sizeof(s->b_texture));
@@ -209,12 +212,18 @@ int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s,
 
 void zxy(int fd, int z, int _x, int _y, int verbose)
 {
-  landsat_scene * s = scene;
+  memset(tile, 0, sizeof(tile));
 
-  if (z < 7)
-    zxy_exact(fd, z, _x, _y, s, verbose);
-  else
-    zxy_approx(fd, z, _x, _y, s, verbose);
+  if (z < 7) {
+    zxy_exact(fd, z, _x, _y, scene + 0, verbose);
+    zxy_exact(fd, z, _x, _y, scene + 1, verbose);
+  }
+  else {
+    zxy_approx(fd, z, _x, _y, scene + 0, verbose);
+    zxy_approx(fd, z, _x, _y, scene + 1, verbose);
+  }
+
+  write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
 void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
@@ -267,32 +276,29 @@ void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   ymax = ceil(ymax);
 
   /* Read clipped textures from image */
-  if (!fetch(xmin, xmax, ymin, ymax, s, verbose)) goto done;
+  if (fetch(xmin, xmax, ymin, ymax, s, verbose)) {
 
-  /* Sample from the textures */
-  for (int j = 0; j < TILE_SIZE; ++j) {
-    for (int i = 0; i < TILE_SIZE; ++i) {
-      double _u, _v;
-      uint8_t byte = 0;
-      int index = (i + j*TILE_SIZE)<<1;
-      _u = patch[index+0];
-      _v = patch[index+1];
-      if (!isnan(_u) && !isnan(_v)) {
-        int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
-        int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
-        byte |= s->tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        byte |= s->tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        byte |= s->tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        s->tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
+    /* Sample from the textures */
+    for (int j = 0; j < TILE_SIZE; ++j) {
+      for (int i = 0; i < TILE_SIZE; ++i) {
+        double _u, _v;
+        uint8_t byte = 0;
+        int index = (i + j*TILE_SIZE)<<1;
+        _u = patch[index+0];
+        _v = patch[index+1];
+        if (!isnan(_u) && !isnan(_v)) {
+          int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
+          int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
+          if (tile[4*i + 4*j*TILE_SIZE + 3] == 0) { // write into empty pixels
+            byte |= tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            byte |= tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            byte |= tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
+          }
+        }
       }
     }
   }
-
- done:
-  write_png(fd, s->tile, TILE_SIZE, TILE_SIZE, 0);
-
-  if (verbose)
-    fprintf(stderr, ANSI_COLOR_YELLOW "finish: z=%d x=%d, y=%d" ANSI_COLOR_RESET "\n", z, _x, _y);
 }
 
 void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
@@ -357,31 +363,28 @@ void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   ymax = ceil(ymax);
 
   /* Read clipped textures from image */
-  if (!fetch(xmin, xmax, ymin, ymax, s, verbose)) goto done;
+  if (fetch(xmin, xmax, ymin, ymax, s, verbose)) {
 
-  /* Sample from the textures */
-  for (int j = 0; j < TILE_SIZE; ++j) {
-    for (int i = 0; i < TILE_SIZE; ++i) {
-      double _u, _v;
-      uint8_t byte = 0;
-      _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
-      _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
-      if (!isnan(_u) && !isnan(_v)) {
-        int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
-        int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
-        byte |= s->tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        byte |= s->tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        byte |= s->tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
-        s->tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
+    /* Sample from the textures */
+    for (int j = 0; j < TILE_SIZE; ++j) {
+      for (int i = 0; i < TILE_SIZE; ++i) {
+        double _u, _v;
+        uint8_t byte = 0;
+        _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
+        _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
+        if (!isnan(_u) && !isnan(_v)) {
+          int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
+          int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
+          if (tile[4*i + 4*j*TILE_SIZE + 3] == 0) { // write into empty pixels
+            byte |= tile[4*i + 4*j*TILE_SIZE + 0] = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            byte |= tile[4*i + 4*j*TILE_SIZE + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            byte |= tile[4*i + 4*j*TILE_SIZE + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            tile[4*i + 4*j*TILE_SIZE + 3] = (byte ? -1 : 0);
+          }
+        }
       }
     }
   }
-
- done:
-  write_png(fd, s->tile, TILE_SIZE, TILE_SIZE, 0);
-
-  if (verbose)
-    fprintf(stderr, ANSI_COLOR_YELLOW "finish: z=%d x=%d, y=%d" ANSI_COLOR_RESET "\n", z, _x, _y);
 }
 
 uint8_t sigmoidal(uint16_t _u)
