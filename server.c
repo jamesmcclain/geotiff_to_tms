@@ -64,10 +64,6 @@ int main(int argc, const char ** argv)
   /* Number of servers to prefork */
   if (argc > 1)
     sscanf(argv[1], "%d", &p);
-  fprintf(stderr,
-          ANSI_COLOR_GREEN "P=%d"
-          ANSI_COLOR_RESET "\n",
-          p);
 
 #if 0
   load(1);
@@ -103,11 +99,6 @@ int main(int argc, const char ** argv)
 
   /* Initialize backend */
   load(1);
-
-  fprintf(stderr,
-          ANSI_COLOR_BLUE "pid=%d"
-          ANSI_COLOR_RESET "\n",
-          getpid());
 
   /* Handle requests */
   while (1) {

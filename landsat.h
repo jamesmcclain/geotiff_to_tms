@@ -29,54 +29,56 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <png.h>
-#include "ansi.h"
-#include "pngwrite.h"
+#ifndef __LANDSAT_H__
+#define __LANDSAT_H__
+
+#include "gdal.h"
+#include "proj_api.h"
 
 
-void write_png(int fd, const uint8_t * tile, int width, int height, int paranoid)
-{
-  FILE *fp;
-  png_structp png_ptr;
-  png_infop info_ptr;
-  png_color_8 sig_bit;
-  png_bytep row_pointers[height];
+struct periphery_struct {
+  double top[TILE_SIZE<<1];
+  double bot[TILE_SIZE<<1];
+  double left[TILE_SIZE<<1];
+  double right[TILE_SIZE<<1];
+};
 
-  fp = fdopen(fd, "w");
+union coordinates_struct {
+  struct periphery_struct periphery;
+  double patch [(TILE_SIZE*TILE_SIZE)<<1];
+};
 
-  png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-  info_ptr = png_create_info_struct(png_ptr);
-  if (setjmp(png_jmpbuf(png_ptr))) {
-    fprintf(stderr, ANSI_COLOR_YELLOW "libpng problem (probably broken pipe)" ANSI_COLOR_RESET "\n");
-    if (paranoid)
-      exit(-1);
-    else
-      return;
-  }
+typedef struct landsat_scene_struct {
+  // Filename
+  const char * filename;
 
-  png_init_io(png_ptr, fp);
-  png_set_IHDR(png_ptr, info_ptr,
-               width, height, 8*sizeof(*tile),
-               PNG_COLOR_TYPE_RGBA,
-               PNG_INTERLACE_NONE,
-               PNG_COMPRESSION_TYPE_BASE,
-               PNG_FILTER_TYPE_BASE);
+  // Datasets
+  GDALDatasetH r_dataset;
+  GDALDatasetH g_dataset;
+  GDALDatasetH b_dataset;
 
-  sig_bit.red   = 8*sizeof(*tile);
-  sig_bit.green = 8*sizeof(*tile);
-  sig_bit.blue  = 8*sizeof(*tile);
-  sig_bit.alpha = 8*sizeof(*tile);
-  png_set_sBIT(png_ptr, info_ptr, &sig_bit);
-  png_write_info(png_ptr, info_ptr);
+  // Bands
+  GDALRasterBandH r_band;
+  GDALRasterBandH g_band;
+  GDALRasterBandH b_band;
 
-  for (png_uint_32 i = 0; i < height; i++)
-    row_pointers[i] = (png_bytep)(tile + i*width*4);
-  png_write_image(png_ptr, row_pointers);
-  png_write_end(png_ptr, info_ptr);
-  png_destroy_write_struct(&png_ptr, &info_ptr);
+  // Textures
+  uint16_t r_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
+  uint16_t g_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
+  uint16_t b_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
 
-  fflush(fp);
-}
+  // Projection
+  projPJ destination_pj;
+
+  // Transform
+  double transform[6];
+
+  // Coordinates
+  union coordinates_struct coordinates;
+
+  // Width, height
+  uint32_t width, height;
+
+} landsat_scene;
+
+#endif
