@@ -219,10 +219,12 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   memset(tile, 0, sizeof(tile));
 
   if (z < 7) {
+    #pragma omp parallel for
     for (int i = 0; i < scene_count; ++i)
       zxy_exact(fd, z, _x, _y, scene + i, verbose);
   }
   else {
+    #pragma omp parallel for
     for (int i = 0; i < scene_count; ++i)
       zxy_approx(fd, z, _x, _y, scene + i, verbose);
   }
@@ -283,6 +285,7 @@ void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   if (fetch(xmin, xmax, ymin, ymax, s, verbose)) {
 
     /* Sample from the textures */
+    #pragma omp critical (tile_exact)
     for (int j = 0; j < TILE_SIZE; ++j) {
       for (int i = 0; i < TILE_SIZE; ++i) {
         double _u, _v;
@@ -373,6 +376,7 @@ void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   if (fetch(xmin, xmax, ymin, ymax, s, verbose)) {
 
     /* Sample from the textures */
+    #pragma omp critical (tile_approx)
     for (int j = 0; j < TILE_SIZE; ++j) {
       for (int i = 0; i < TILE_SIZE; ++i) {
         double _u, _v;
