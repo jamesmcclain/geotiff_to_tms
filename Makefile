@@ -1,17 +1,17 @@
 GDAL_CFLAGS ?= $(shell gdal-config --cflags)
 GDAL_LDFLAGS ?= $(shell gdal-config --libs) $(shell gdal-config --dep-libs)
 CC = gcc
-CFLAGS ?= -Wall -Werror -O0 -ggdb3
+CFLAGS ?= -Wall -Wextra -O0 -ggdb3
 LDFLAGS += -lproj $(GDAL_LDFLAGS)
 
 
 all: landsat-server
 
 landsat-server: server.o landsat.o pngwrite.o
-	$(CC) $(LDFLAGS) server.o landsat.o pngwrite.o -o $@
+	$(CC) $(LDFLAGS) -fopenmp server.o landsat.o pngwrite.o -o $@
 
 landsat.o: landsat.c landsat.h load.h constants.h
-	$(CC) $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
+	$(CC) -fopenmp $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) $< -c -o $@

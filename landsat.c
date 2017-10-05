@@ -56,8 +56,8 @@ uint8_t tile[TILE_SIZE * TILE_SIZE * 4]; // RGBA ergo 4
 
 void load_scene(landsat_scene * s, int verbose);
 int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s, int verbose);
-void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose);
-void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose);
+void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose);
+void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose);
 uint8_t sigmoidal(uint16_t _u);
 void world_to_image(double * xy, landsat_scene * s);
 
@@ -142,9 +142,9 @@ void load_scene(landsat_scene * s, int verbose)
 int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s, int verbose)
 {
   int startx = (int)xmin, starty = (int)ymin;
-  int rsizex = (int)(xmax-xmin), rsizey = (int)(ymax-ymin);
-  int wsizex = TEXTURE_BUFFER_SIZE, wsizey = TEXTURE_BUFFER_SIZE;
-  int deltax = 0, deltay = 0;
+  unsigned int rsizex = (int)(xmax-xmin), rsizey = (int)(ymax-ymin);
+  unsigned int wsizex = TEXTURE_BUFFER_SIZE, wsizey = TEXTURE_BUFFER_SIZE;
+  unsigned int deltax = 0, deltay = 0;
 
   memset(s->r_texture, 0, sizeof(s->r_texture));
   memset(s->g_texture, 0, sizeof(s->g_texture));
@@ -219,18 +219,20 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   memset(tile, 0, sizeof(tile));
 
   if (z < 7) {
+    #pragma omp parallel for ordered schedule(static,1)
     for (int i = 0; i < scene_count; ++i)
-      zxy_exact(fd, z, _x, _y, scene + i, verbose);
+      zxy_exact(z, _x, _y, scene + i, verbose);
   }
   else {
+    #pragma omp parallel for ordered schedule(static,1)
     for (int i = 0; i < scene_count; ++i)
-      zxy_approx(fd, z, _x, _y, scene + i, verbose);
+      zxy_approx(z, _x, _y, scene + i, verbose);
   }
 
   write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
-void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
+void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose)
 {
   double * patch = s->coordinates.patch;
   double xmin = DBL_MAX, ymin = DBL_MAX;
@@ -283,6 +285,7 @@ void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   if (fetch(xmin, xmax, ymin, ymax, s, verbose)) {
 
     /* Sample from the textures */
+    #pragma omp ordered
     for (int j = 0; j < TILE_SIZE; ++j) {
       for (int i = 0; i < TILE_SIZE; ++i) {
         double _u, _v;
@@ -308,7 +311,7 @@ void zxy_exact(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   }
 }
 
-void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
+void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose)
 {
   double * top   = s->coordinates.periphery.top;
   double * bot   = s->coordinates.periphery.bot;
@@ -373,6 +376,7 @@ void zxy_approx(int fd, int z, int _x, int _y, landsat_scene * s, int verbose)
   if (fetch(xmin, xmax, ymin, ymax, s, verbose)) {
 
     /* Sample from the textures */
+    #pragma omp ordered
     for (int j = 0; j < TILE_SIZE; ++j) {
       for (int i = 0; i < TILE_SIZE; ++i) {
         double _u, _v;
