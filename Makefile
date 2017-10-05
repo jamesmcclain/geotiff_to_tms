@@ -1,7 +1,7 @@
 GDAL_CFLAGS ?= $(shell gdal-config --cflags)
 GDAL_LDFLAGS ?= $(shell gdal-config --libs) $(shell gdal-config --dep-libs)
 CC = gcc
-CFLAGS ?= -Wall -O0 -ggdb3
+CFLAGS ?= -Wall -Wextra -O0 -ggdb3
 LDFLAGS += -lproj $(GDAL_LDFLAGS)
 
 
