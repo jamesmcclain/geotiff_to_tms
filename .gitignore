@@ -1,3 +1,6 @@
-*.o
 landsat-server
-
+*.o
+.terraform
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
