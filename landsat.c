@@ -92,6 +92,9 @@ void load_scene(landsat_scene * s, int verbose)
   char g_filename[(1<<8)];
   char b_filename[(1<<8)];
 
+  if (verbose)
+    fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", s->filename);
+
   sprintf(r_filename, s->filename, 4);
   sprintf(g_filename, s->filename, 3);
   sprintf(b_filename, s->filename, 2);
