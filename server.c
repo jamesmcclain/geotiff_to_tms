@@ -46,7 +46,7 @@
 #include "ansi.h"
 #include "load.h"
 
-#define P (1<<5)
+#define P (1<<3)
 
 
 // http://localhost:8001/{z}/{x}/{y}.png
