@@ -34,6 +34,6 @@
 #ifndef __PNGWRITE_H__
 #define __PNGWRITE_H__
 
-void write_png(int fd, const uint8_t * tile, int width, int height, int paranoid);
+void write_png(int fd, const uint8_t * tile, unsigned int width, unsigned int height, int paranoid);
 
 #endif

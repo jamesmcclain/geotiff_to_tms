@@ -69,7 +69,6 @@ int main(int argc, const char ** argv)
   load(1);
   int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
   zxy(fd, 3, 5, 3, 1);
-  /* zxy(fd, 10, 759, 448, 1); */
   fsync(fd); close(fd);
 #endif
 
