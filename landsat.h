@@ -78,6 +78,9 @@ typedef struct landsat_scene_struct {
 
   // Width, height
   uint32_t width, height;
+  double xmin, xmax, ymin, ymax;
+
+  int dirty;
 
 } landsat_scene;
 
