@@ -55,7 +55,7 @@ int scene_count = 3;
 uint8_t tile[TILE_SIZE * TILE_SIZE * 4]; // RGBA ergo 4
 
 void load_scene(landsat_scene * s, int verbose);
-int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s, int verbose);
+int fetch(landsat_scene * s, int verbose);
 void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose);
 void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose);
 uint8_t sigmoidal(uint16_t _u);
@@ -71,13 +71,16 @@ void load(int verbose)
   /* (scene + 0)->filename = "/tmp/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
   /* (scene + 1)->filename = "/tmp/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
   /* (scene + 2)->filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
-  (scene + 0)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF";
-  (scene + 1)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
-  (scene + 2)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF";
+  /* (scene + 0)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
+  /* (scene + 1)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
+  /* (scene + 2)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
   /* //  docker run --rm -it --name my-apache-app -p 8080:80 -v /tmp/:/usr/local/apache2/htdocs/:ro httpd:2.4 */
   /* (scene + 0)->filename = "/vsicurl/http://localhost:8080/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
   /* (scene + 1)->filename = "/vsicurl/http://localhost:8080/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
   /* (scene + 2)->filename = "/vsicurl/http://localhost:8080/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
+  (scene + 0)->filename = "/home/ec2-user/mnt/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF";
+  (scene + 1)->filename = "/home/ec2-user/mnt/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
+  (scene + 2)->filename = "/home/ec2-user/mnt/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF";
 
   webmercator_pj = pj_init_plus(webmercator);
   for (int i = 0; i < scene_count; ++i)
@@ -146,8 +149,9 @@ void load_scene(landsat_scene * s, int verbose)
     fprintf(stderr, ANSI_COLOR_BLUE "pid=%d" ANSI_COLOR_RESET "\n", getpid());
 }
 
-int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s, int verbose)
+int fetch(landsat_scene * s, int verbose)
 {
+  double xmin = s->xmin, xmax = s->xmax, ymin = s->ymin, ymax = s->ymax;
   int startx = (int)xmin, starty = (int)ymin;
   unsigned int rsizex = (int)(xmax-xmin), rsizey = (int)(ymax-ymin);
   unsigned int wsizex = TEXTURE_BUFFER_SIZE, wsizey = TEXTURE_BUFFER_SIZE;
@@ -223,18 +227,64 @@ int fetch(double xmin, double xmax, double ymin, double ymax, landsat_scene * s,
 
 void zxy(int fd, int z, int _x, int _y, int verbose)
 {
-  memset(tile, 0, sizeof(tile));
+  int exact = (z < 7) ? 1 : 0;
 
-  if (z < 7) {
-    #pragma omp parallel for ordered schedule(static,1)
-    for (int i = 0; i < scene_count; ++i)
+  #pragma omp parallel for schedule(dynamic, 1)
+  for (int i = -1; i < scene_count; ++i) {
+    if (i == -1)
+      memset(tile, 0, sizeof(tile));
+    else if (exact)
       zxy_exact(z, _x, _y, scene + i, verbose);
-  }
-  else {
-    #pragma omp parallel for ordered schedule(static,1)
-    for (int i = 0; i < scene_count; ++i)
+    else if (!exact)
       zxy_approx(z, _x, _y, scene + i, verbose);
   }
+
+  // Sample from textures to produce tile
+  for (int i = 0; i < scene_count; ++i)
+    {
+
+      landsat_scene * s = scene + i;
+
+      if (!s->dirty) continue;
+
+      double * patch = s->coordinates.patch;
+      double * top   = s->coordinates.periphery.top;
+      double * bot   = s->coordinates.periphery.bot;
+      double * left  = s->coordinates.periphery.left;
+      double * right = s->coordinates.periphery.right;
+      double xmin = s->xmin, xmax = s->xmax, ymin = s->ymin, ymax = s->ymax;
+
+      for (int j = 0; j < TILE_SIZE; ++j) {
+        for (int i = 0; i < TILE_SIZE; ++i) {
+          double _u, _v;
+          uint8_t red, byte = 0;
+          int index = (i + j*TILE_SIZE)<<1;
+
+          if (z < 7) {
+            _u = patch[index+0];
+            _v = patch[index+1];
+          }
+          else {
+            _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
+            _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
+          }
+
+          if (!isnan(_u) && !isnan(_v)) {
+            int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
+            int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
+            int index = 4*i + 4*j*TILE_SIZE;
+
+            byte |= red = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
+            if (tile[index + 3] == 0 || tile[index + 0] < red) { // write into empty pixels
+              tile[index + 0] = red;
+              byte |= tile[index + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
+              byte |= tile[index + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
+              tile[index + 3] = (byte ? -1 : 0);
+            }
+          }
+        }
+      }
+    }
 
   write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
@@ -283,39 +333,12 @@ void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose)
     }
   }
 
-  xmin = floor(xmin);
-  xmax = ceil(xmax);
-  ymin = floor(ymin);
-  ymax = ceil(ymax);
+  s->xmin = xmin = floor(xmin);
+  s->xmax = xmax = ceil(xmax);
+  s->ymin = ymin = floor(ymin);
+  s->ymax = ymax = ceil(ymax);
 
-  /* Read clipped textures from image */
-  if (fetch(xmin, xmax, ymin, ymax, s, verbose)) {
-
-    /* Sample from the textures */
-    #pragma omp ordered
-    for (int j = 0; j < TILE_SIZE; ++j) {
-      for (int i = 0; i < TILE_SIZE; ++i) {
-        double _u, _v;
-        uint8_t red, byte = 0;
-        int index = (i + j*TILE_SIZE)<<1;
-        _u = patch[index+0];
-        _v = patch[index+1];
-        if (!isnan(_u) && !isnan(_v)) {
-          int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
-          int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
-          int index = 4*i + 4*j*TILE_SIZE;
-
-          byte |= red = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
-          if (tile[index + 3] == 0 || tile[index + 0] < red) { // write into empty pixels
-            tile[index + 0] = red;
-            byte |= tile[index + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            byte |= tile[index + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            tile[index + 3] = (byte ? -1 : 0);
-          }
-        }
-      }
-    }
-  }
+  s->dirty = fetch(s, verbose);
 }
 
 void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose)
@@ -374,38 +397,12 @@ void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose)
     ymin = fmin(right[i+1], fmin(left[i+1], fmin(bot[i+1], fmin(top[i+1], ymin))));
     ymax = fmax(right[i+1], fmax(left[i+1], fmax(bot[i+1], fmax(top[i+1], ymax))));
   }
-  xmin = floor(xmin);
-  xmax = ceil(xmax);
-  ymin = floor(ymin);
-  ymax = ceil(ymax);
+  s->xmin = xmin = floor(xmin);
+  s->xmax = xmax = ceil(xmax);
+  s->ymin = ymin = floor(ymin);
+  s->ymax = ymax = ceil(ymax);
 
-  /* Read clipped textures from image */
-  if (fetch(xmin, xmax, ymin, ymax, s, verbose)) {
-
-    /* Sample from the textures */
-    #pragma omp ordered
-    for (int j = 0; j < TILE_SIZE; ++j) {
-      for (int i = 0; i < TILE_SIZE; ++i) {
-        double _u, _v;
-        uint8_t red, byte = 0;
-        _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
-        _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
-        if (!isnan(_u) && !isnan(_v)) {
-          int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
-          int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
-          int index = 4*i + 4*j*TILE_SIZE;
-
-          byte |= red = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
-          if (tile[index + 3] == 0 || tile[index + 0] < red) { // write into empty pixels
-            tile[index + 0] = red;
-            byte |= tile[index + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            byte |= tile[index + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            tile[index + 3] = (byte ? -1 : 0);
-          }
-        }
-      }
-    }
-  }
+  s->dirty = fetch(s, verbose);
 }
 
 uint8_t sigmoidal(uint16_t _u)
