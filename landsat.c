@@ -71,13 +71,16 @@ void load(int verbose)
   /* (scene + 0)->filename = "/tmp/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
   /* (scene + 1)->filename = "/tmp/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
   /* (scene + 2)->filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
-  (scene + 0)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF";
-  (scene + 1)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
-  (scene + 2)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF";
+  /* (scene + 0)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
+  /* (scene + 1)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
+  /* (scene + 2)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
   /* //  docker run --rm -it --name my-apache-app -p 8080:80 -v /tmp/:/usr/local/apache2/htdocs/:ro httpd:2.4 */
   /* (scene + 0)->filename = "/vsicurl/http://localhost:8080/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
   /* (scene + 1)->filename = "/vsicurl/http://localhost:8080/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
   /* (scene + 2)->filename = "/vsicurl/http://localhost:8080/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
+  (scene + 0)->filename = "/home/ec2-user/mnt/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF";
+  (scene + 1)->filename = "/home/ec2-user/mnt/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
+  (scene + 2)->filename = "/home/ec2-user/mnt/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF";
 
   webmercator_pj = pj_init_plus(webmercator);
   for (int i = 0; i < scene_count; ++i)
