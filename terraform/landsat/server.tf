@@ -15,13 +15,19 @@ variable "key_name" {
   description = "The name of the EC2 secret key (primarily for SSH access)"
 }
 
+variable "instance_type" {
+  type        = "string"
+  description = "The type of instance (e.g. t2.micro)"
+  default     = "t2.micro"
+}
+
 provider "aws" {
   region = "${var.region}"
 }
 
 resource "aws_instance" "landsat" {
   ami             = "${var.ami}"
-  instance_type   = "t2.micro"
+  instance_type   = "${var.instance_type}"
   key_name        = "${var.key_name}"
   security_groups = ["${aws_security_group.landsat.name}"]
 
