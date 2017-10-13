@@ -7,8 +7,8 @@ LDFLAGS += -lproj $(GDAL_LDFLAGS)
 
 all: landsat-server
 
-landsat-server: server.o landsat.o pngwrite.o
-	$(CC) $(LDFLAGS) -fopenmp server.o landsat.o pngwrite.o -o $@
+landsat-server: server.o landsat.o pngwrite.o fullwrite.o
+	$(CC) $(LDFLAGS) -fopenmp server.o landsat.o pngwrite.o fullwrite.o -o $@
 
 landsat.o: landsat.c landsat.h load.h constants.h
 	$(CC) -fopenmp $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
