@@ -34,8 +34,11 @@
 #include <stdlib.h>
 #include <png.h>
 #include "ansi.h"
+#include "fullio.h"
 #include "pngwrite.h"
 
+
+uint8_t buffer[1<<20];
 
 void write_png(int fd, const uint8_t * tile, unsigned int width, unsigned int height, int paranoid)
 {
@@ -45,7 +48,7 @@ void write_png(int fd, const uint8_t * tile, unsigned int width, unsigned int he
   png_color_8 sig_bit;
   png_bytep row_pointers[height];
 
-  fp = fdopen(fd, "w");
+  fp = fmemopen(buffer, sizeof(buffer), "wb+");
 
   png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   info_ptr = png_create_info_struct(png_ptr);
@@ -79,4 +82,6 @@ void write_png(int fd, const uint8_t * tile, unsigned int width, unsigned int he
   png_destroy_write_struct(&png_ptr, &info_ptr);
 
   fflush(fp);
+  fullwrite(fd, buffer, ftell(fp));
+  fclose(fp);
 }

@@ -44,9 +44,12 @@
 #include <sys/socket.h>
 
 #include "ansi.h"
+#include "fullio.h"
 #include "load.h"
 
 #define P (1<<3)
+
+char buffer[1<<20];
 
 
 // http://localhost:8001/{z}/{x}/{y}.png
@@ -105,7 +108,6 @@ int main(int argc, const char ** argv)
       "HTTP/1.1 200 OK\r\n"
       "Access-Control-Allow-Origin: *\r\n"
       "Content-Type: image/png\r\n\r\n";
-    char buffer[1<<5];
     int z, x, y;
 
     if ((fd2 = accept(fd1, NULL, NULL)) == -1) {
@@ -115,9 +117,9 @@ int main(int argc, const char ** argv)
       exit(-1);
     }
 
-    read(fd2, buffer, sizeof(buffer));
+    fullread(fd2, buffer, sizeof(buffer));
     sscanf(buffer, "GET /%d/%d/%d.png HTTP/1.1", &z, &x, &y);
-    write(fd2, twohundred, strlen(twohundred));
+    fullwrite(fd2, twohundred, strlen(twohundred));
     zxy(fd2, z, x, y, 1);
 
     fsync(fd2); shutdown(fd2, SHUT_RDWR); close(fd2);
