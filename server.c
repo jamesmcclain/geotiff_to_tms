@@ -103,6 +103,7 @@ int main(int argc, const char ** argv)
   while (1) {
     char * twohundred =
       "HTTP/1.1 200 OK\r\n"
+      "Access-Control-Allow-Origin: *\r\n"
       "Content-Type: image/png\r\n\r\n";
     char buffer[1<<5];
     int z, x, y;
