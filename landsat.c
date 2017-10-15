@@ -175,10 +175,6 @@ int fetch(landsat_scene * s, int verbose)
   unsigned int wsizex = TEXTURE_BUFFER_SIZE, wsizey = TEXTURE_BUFFER_SIZE;
   unsigned int deltax = 0, deltay = 0;
 
-  memset(s->r_texture, 0, sizeof(s->r_texture));
-  memset(s->g_texture, 0, sizeof(s->g_texture));
-  memset(s->b_texture, 0, sizeof(s->b_texture));
-
   if (startx < 0) {
     rsizex += startx;
     startx = 0;
@@ -203,6 +199,10 @@ int fetch(landsat_scene * s, int verbose)
 
   if (!rsizex || !rsizey || !wsizex || !wsizey)
     return 0;
+
+  memset(s->r_texture, 0, sizeof(s->r_texture));
+  memset(s->g_texture, 0, sizeof(s->g_texture));
+  memset(s->b_texture, 0, sizeof(s->b_texture));
 
   if (verbose) {
     fprintf(stderr,
