@@ -34,15 +34,13 @@
 
 #include "gdal.h"
 #include "proj_api.h"
-
-#define FILENAME_LEN (1<<8)
-#define TILE_SIZE2 (TILE_SIZE * TILE_SIZE)
+#include "constants.h"
 
 
 struct periphery_struct {
-  double top[TILE_SIZE<<1];
-  double bot[TILE_SIZE<<1];
-  double left[TILE_SIZE<<1];
+  double   top[TILE_SIZE<<1]; // two coordinates ergo shift
+  double   bot[TILE_SIZE<<1];
+  double  left[TILE_SIZE<<1];
   double right[TILE_SIZE<<1];
 };
 
@@ -66,9 +64,9 @@ typedef struct landsat_scene_struct {
   GDALRasterBandH b_band;
 
   // Textures
-  uint16_t r_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
-  uint16_t g_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
-  uint16_t b_texture[TEXTURE_BUFFER_SIZE * TEXTURE_BUFFER_SIZE];
+  uint16_t r_texture[TEXTURE_BUFFER_SIZE2];
+  uint16_t g_texture[TEXTURE_BUFFER_SIZE2];
+  uint16_t b_texture[TEXTURE_BUFFER_SIZE2];
 
   // Projection
   projPJ destination_pj;
@@ -79,9 +77,20 @@ typedef struct landsat_scene_struct {
   // Coordinates
   union coordinates_struct coordinates;
 
-  // Width, height
-  uint32_t width, height;
+  // bounding box for the current tile in source image coordinates
   double xmin, xmax, ymin, ymax;
+
+  // Information about the source image.  The bounding box given on
+  // the second line is the intersection of the source image with the
+  // tile.
+  uint32_t src_width, src_height;
+  uint32_t src_window_xmin, src_window_xmax, src_window_ymin, src_window_ymax;
+
+  // The starting point of the texture within the tile, as well as its
+  // height and width.  Here, the red, green, and blue textures are
+  // referred to in the singular.
+  uint32_t tile_window_xmin, tile_window_ymin, tile_window_width, tile_window_height;
+  // offset
 
   int dirty;
 

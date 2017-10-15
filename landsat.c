@@ -37,7 +37,6 @@
 #include <math.h>
 
 #include "ansi.h"
-#include "constants.h"
 #include "landsat.h"
 #include "load.h"
 #include "pngwrite.h"
@@ -52,7 +51,7 @@ const char * webmercator = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=
 projPJ webmercator_pj = NULL;
 landsat_scene * scene = NULL;
 int scene_count = -1;
-uint8_t tile[TILE_SIZE * TILE_SIZE * 4]; // RGBA ergo 4
+uint8_t tile[TILE_SIZE2<<2]; // RGBA ergo 4
 
 void load_scene(landsat_scene * s, int verbose);
 int fetch(landsat_scene * s, int verbose);
@@ -114,8 +113,8 @@ void preload(int verbose)
     GDALGetGeoTransform(dataset, s->transform);
 
     /* Dimensions (from red band). */
-    s->width  = GDALGetRasterXSize(dataset);
-    s->height = GDALGetRasterYSize(dataset);
+    s->src_width  = GDALGetRasterXSize(dataset);
+    s->src_height = GDALGetRasterYSize(dataset);
 
     /* Cleanup */
     CPLFree(dstProj4);
@@ -169,73 +168,55 @@ void load_scene(landsat_scene * s, int verbose)
 
 int fetch(landsat_scene * s, int verbose)
 {
-  double xmin = s->xmin, xmax = s->xmax, ymin = s->ymin, ymax = s->ymax;
-  int startx = (int)xmin, starty = (int)ymin;
-  unsigned int rsizex = (int)(xmax-xmin), rsizey = (int)(ymax-ymin);
-  unsigned int wsizex = TEXTURE_BUFFER_SIZE, wsizey = TEXTURE_BUFFER_SIZE;
-  unsigned int deltax = 0, deltay = 0;
+  int window_width, window_height;
 
-  if (startx < 0) {
-    rsizex += startx;
-    startx = 0;
-    deltax = TEXTURE_BUFFER_SIZE-(int)(wsizex * (rsizex/(xmax-xmin)));
-  }
-  if (starty < 0) {
-    rsizey += starty;
-    starty = 0;
-    deltay = TEXTURE_BUFFER_SIZE-(int)(wsizey * (rsizey/(ymax-ymin)));
-  }
-  if (startx + rsizex > s->width) {
-    rsizex = s->width - startx;
-    rsizex = rsizex > 0? rsizex : 0;
-  }
-  if (starty + rsizey > s->height) {
-    rsizey = s->height - starty;
-    rsizey = rsizey > 0? rsizey : 0;
-  }
-
-  wsizex = (int)(wsizex * (rsizex/(xmax-xmin)));
-  wsizey = (int)(wsizey * (rsizey/(ymax-ymin)));
-
-  if (!rsizex || !rsizey || !wsizex || !wsizey)
+  // If the tile is disjoint from the source image, exit.
+  if ((s->xmin > s->src_width-1) || (s->ymin > s->src_height-1) || (s->xmax < 0) || (s->ymax < 0)) {
     return 0;
-
-  memset(s->r_texture, 0, sizeof(s->r_texture));
-  memset(s->g_texture, 0, sizeof(s->g_texture));
-  memset(s->b_texture, 0, sizeof(s->b_texture));
-
-  if (verbose) {
-    fprintf(stderr,
-            ANSI_COLOR_CYAN "startx=%d rsize=%d wsize=%d delta=%d pid=%d"
-            ANSI_COLOR_RESET "\n",
-            startx, rsizex, wsizex, deltax, getpid());
-    fprintf(stderr,
-            ANSI_COLOR_CYAN "starty=%d rsize=%d wsize=%d delta=%d pid=%d"
-            ANSI_COLOR_RESET "\n",
-            starty, rsizey, wsizey, deltay, getpid());
   }
 
+  // Clip window to source data
+  if (s->xmin < 0) s->src_window_xmin = 0; else s->src_window_xmin = s->xmin;
+  if (s->ymin < 0) s->src_window_ymin = 0; else s->src_window_ymin = s->ymin;
+  if (s->xmax > s->src_width-1) s->src_window_xmax = s->src_width-1; else s->src_window_xmax = s->xmax;
+  if (s->ymax > s->src_height-1) s->src_window_ymax = s->src_height-1; else s->src_window_ymax = s->ymax;
+  window_width = s->src_window_xmax - s->src_window_xmin;
+  window_height = s->src_window_ymax - s->src_window_ymin;
+  s->tile_window_xmin = TILE_SIZE*((s->src_window_xmin - s->xmin)/(s->xmax - s->xmin));
+  s->tile_window_ymin = TILE_SIZE*((s->src_window_ymin - s->ymin)/(s->ymax - s->ymin));
+  s->tile_window_width = TILE_SIZE*((s->src_window_xmax - s->src_window_xmin)/(s->xmax - s->xmin));
+  s->tile_window_height = TILE_SIZE*((s->src_window_ymax - s->src_window_ymin)/(s->ymax - s->ymin));
+
+  /* if (verbose) { */
+  /*   fprintf(stderr, */
+  /*           ANSI_COLOR_CYAN "startx=%d rsize=%d wsize=%d delta=%d pid=%d" */
+  /*           ANSI_COLOR_RESET "\n", */
+  /*           startx, rsizex, wsizex, deltax, getpid()); */
+  /*   fprintf(stderr, */
+  /*           ANSI_COLOR_CYAN "starty=%d rsize=%d wsize=%d delta=%d pid=%d" */
+  /*           ANSI_COLOR_RESET "\n", */
+  /*           starty, rsizey, wsizey, deltay, getpid()); */
+  /* } */
+
+  // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
   if (GDALRasterIO(s->r_band, GF_Read,
-                   startx, starty, rsizex, rsizey,
-                   s->r_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
-                   wsizex, wsizey,
-                   GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
+                   s->src_window_xmin, s->src_window_ymin, window_width, window_height,
+                   s->r_texture, s->tile_window_width, s->tile_window_height,
+                   GDT_UInt16, 0, 0)) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (red band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
   if (GDALRasterIO(s->g_band, GF_Read,
-                   startx, starty, rsizex, rsizey,
-                   s->g_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
-                   wsizex, wsizey,
-                   GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
+                   s->src_window_xmin, s->src_window_ymin, window_width, window_height,
+                   s->g_texture, s->tile_window_width, s->tile_window_height,
+                   GDT_UInt16, 0, 0)) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (green band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
   if (GDALRasterIO(s->b_band, GF_Read,
-                   startx, starty, rsizex, rsizey,
-                   s->b_texture + deltax + (TEXTURE_BUFFER_SIZE*deltay),
-                   wsizex, wsizey,
-                   GDT_UInt16, 0, TEXTURE_BUFFER_SIZE*sizeof(uint16_t))) {
+                   s->src_window_xmin, s->src_window_ymin, window_width, window_height,
+                   s->b_texture, s->tile_window_width, s->tile_window_height,
+                   GDT_UInt16, 0, 0)) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (blue band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
@@ -265,40 +246,25 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
 
       if (!s->dirty) continue;
 
-      double * patch = s->coordinates.patch;
-      double * top   = s->coordinates.periphery.top;
-      double * bot   = s->coordinates.periphery.bot;
-      double * left  = s->coordinates.periphery.left;
-      double * right = s->coordinates.periphery.right;
-      double xmin = s->xmin, xmax = s->xmax, ymin = s->ymin, ymax = s->ymax;
+      /* double * patch = s->coordinates.patch; */
+      /* double * top   = s->coordinates.periphery.top; */
+      /* double * bot   = s->coordinates.periphery.bot; */
+      /* double * left  = s->coordinates.periphery.left; */
+      /* double * right = s->coordinates.periphery.right; */
+      /* double xmin = s->xmin, xmax = s->xmax, ymin = s->ymin, ymax = s->ymax; */
 
-      for (int j = 0; j < TILE_SIZE; ++j) {
-        for (int i = 0; i < TILE_SIZE; ++i) {
-          double _u, _v;
+      for (unsigned int j = 0; (j < s->tile_window_height); ++j) {
+        for (unsigned int i = 0; (i < s->tile_window_width); ++i) {
           uint8_t red, byte = 0;
-          int index = (i + j*TILE_SIZE)<<1;
+          int tile_index = ((i + s->tile_window_xmin) + (j + s->tile_window_ymin)*TILE_SIZE)<<2;
+          int texture_index = (i + j*s->tile_window_width);
 
-          if (exact) { // If exact, read directly from computed coordinate values
-            _u = patch[index+0];
-            _v = patch[index+1];
-          }
-          else { // If not exact, interpolate from boundary
-            _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
-            _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
-          }
-
-          if (!isnan(_u) && !isnan(_v)) {
-            int u = (int)(((_u - xmin)/(xmax-xmin)) * TEXTURE_BUFFER_SIZE);
-            int v = (int)(((_v - ymin)/(ymax-ymin)) * TEXTURE_BUFFER_SIZE);
-            int index = 4*i + 4*j*TILE_SIZE;
-
-            byte |= red = sigmoidal(s->r_texture[u + v*TEXTURE_BUFFER_SIZE]);
-            if (tile[index + 3] == 0 || tile[index + 0] < red) { // write into empty pixels
-              tile[index + 0] = red;
-              byte |= tile[index + 1] = sigmoidal(s->g_texture[u + v*TEXTURE_BUFFER_SIZE]);
-              byte |= tile[index + 2] = sigmoidal(s->b_texture[u + v*TEXTURE_BUFFER_SIZE]);
-              tile[index + 3] = (byte ? -1 : 0);
-            }
+          byte |= red = sigmoidal(s->r_texture[texture_index]);
+          if (tile[tile_index + 3] == 0 || tile[tile_index + 0] < red) { // write into empty pixels
+            tile[tile_index + 0] = red;
+            byte |= tile[tile_index + 1] = sigmoidal(s->g_texture[texture_index]);
+            byte |= tile[tile_index + 2] = sigmoidal(s->b_texture[texture_index]);
+            tile[tile_index + 3] = (byte ? -1 : 0);
           }
         }
       }
@@ -351,10 +317,10 @@ void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose)
     }
   }
 
-  s->xmin = xmin = floor(xmin);
-  s->xmax = xmax = ceil(xmax);
-  s->ymin = ymin = floor(ymin);
-  s->ymax = ymax = ceil(ymax);
+  s->xmin = floor(xmin);
+  s->xmax = ceil(xmax);
+  s->ymin = floor(ymin);
+  s->ymax = ceil(ymax);
 
   s->dirty = fetch(s, verbose);
 }
@@ -413,10 +379,11 @@ void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose)
     ymin = fmin(right[i+1], fmin(left[i+1], fmin(bot[i+1], fmin(top[i+1], ymin))));
     ymax = fmax(right[i+1], fmax(left[i+1], fmax(bot[i+1], fmax(top[i+1], ymax))));
   }
-  s->xmin = xmin = floor(xmin);
-  s->xmax = xmax = ceil(xmax);
-  s->ymin = ymin = floor(ymin);
-  s->ymax = ymax = ceil(ymax);
+
+  s->xmin = floor(xmin);
+  s->xmax = ceil(xmax);
+  s->ymin = floor(ymin);
+  s->ymax = ceil(ymax);
 
   s->dirty = fetch(s, verbose);
 }
