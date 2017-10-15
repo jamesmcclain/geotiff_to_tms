@@ -67,6 +67,7 @@ int main(int argc, const char ** argv)
   /* Number of servers to prefork */
   if (argc > 1)
     sscanf(argv[1], "%d", &p);
+  fprintf(stderr, ANSI_COLOR_BLUE "P = %d" ANSI_COLOR_RESET "\n", p);
 
 #if 0
   load(1);
@@ -96,6 +97,7 @@ int main(int argc, const char ** argv)
     exit(-1);
   }
 
+  /* Fork */
   signal(SIGPIPE, SIG_IGN);
   for (int i = 0; (i < p-1) && fork(); ++i);
 

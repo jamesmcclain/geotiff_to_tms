@@ -35,6 +35,8 @@
 #include "gdal.h"
 #include "proj_api.h"
 
+#define TILE_SIZE2 (TILE_SIZE * TILE_SIZE)
+
 
 struct periphery_struct {
   double top[TILE_SIZE<<1];
@@ -45,7 +47,7 @@ struct periphery_struct {
 
 union coordinates_struct {
   struct periphery_struct periphery;
-  double patch [(TILE_SIZE*TILE_SIZE)<<1];
+  double patch [TILE_SIZE2<<1]; // two coordinates ergo shift
 };
 
 typedef struct landsat_scene_struct {

@@ -61,7 +61,6 @@ void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose);
 uint8_t sigmoidal(uint16_t _u);
 void world_to_image(double * xy, landsat_scene * s);
 
-#define LARGER(a,b) (a = a > (b) ? a : (b))
 
 void load(int verbose)
 {
@@ -261,11 +260,11 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
           uint8_t red, byte = 0;
           int index = (i + j*TILE_SIZE)<<1;
 
-          if (z < 7) {
+          if (exact) { // If exact, read directly from computed coordinate values
             _u = patch[index+0];
             _v = patch[index+1];
           }
-          else {
+          else { // If not exact, interpolate from boundary
             _u = top[2*i]*((double)j/TILE_SIZE) + bot[2*i]*(1-((double)j/TILE_SIZE));
             _v = left[2*j+1]*((double)i/TILE_SIZE) + right[2*j+1]*(1-((double)i/TILE_SIZE));
           }
@@ -361,31 +360,29 @@ void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose)
     Source: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
   */
   for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
-    // top, bottom longitudes
-    top[i+0] = _x + (i/(TILE_SIZE*2.0));           // tile space
-    top[i+0] /= pow(2.0, z);                       // 0-1 scaled, translated Web Mercator
-    top[i+0] = (2*top[i+0] - 1) * M_PI;         // Web Mercator in radians
+    // top, bottom x-values
+    top[i+0] = _x + (i/(TILE_SIZE*2.0));     // tile space
+    top[i+0] /= pow(2.0, z);                 // 0-1 scaled, translated Web Mercator
+    top[i+0] = (2*top[i+0] - 1) * M_PI;      // Web Mercator in radians
     top[i+0] = bot[i+0] = top[i+0] * RADIUS; // Web Mercator in radians*radius
 
-    // top, bottom latitudes
+    // top, bottom y-values
     top[i+1] = (1 - 2*((_y+0) / pow(2.0, z))) * M_PI * RADIUS;
     bot[i+1] = (1 - 2*((_y+1) / pow(2.0, z))) * M_PI * RADIUS;
 
-    // left, right longitudes
+    // left, right x-values
     left[i+0]  = (2*((_x+0) / pow(2.0, z)) - 1) * M_PI * RADIUS;
     right[i+0] = (2*((_x+1) / pow(2.0, z)) - 1) * M_PI * RADIUS;
 
-    // left, right latitudes
+    // left, right y-values
     left[i+1] = _y + (i/(TILE_SIZE*2.0));
     left[i+1] /= pow(2.0, z);
     left[i+1] = right[i+1] = (1 - 2*left[i+1]) * M_PI * RADIUS;
   }
 
   /* Web Mercator to world coordinates */
-  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, top,   top+1, NULL);
-  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, bot,   bot+1, NULL);
-  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, left,  left+1, NULL);
-  pj_transform(webmercator_pj, s->destination_pj, TILE_SIZE, 2, right, right+1, NULL);
+  pj_transform(webmercator_pj, s->destination_pj,
+               TILE_SIZE<<2, 2, top, top+1, NULL); //top, bot, left, right ergo shift
 
   /* world coordinates to image coordinates */
   for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
