@@ -70,6 +70,7 @@ int main(int argc, const char ** argv)
   fprintf(stderr, ANSI_COLOR_BLUE "P = %d" ANSI_COLOR_RESET "\n", p);
 
 #if 0
+  preload(1);
   load(1);
   int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
   zxy(fd, 3, 5, 3, 1);
@@ -97,11 +98,14 @@ int main(int argc, const char ** argv)
     exit(-1);
   }
 
+  /* Global backend initialization */
+  preload(1);
+
   /* Fork */
   signal(SIGPIPE, SIG_IGN);
   for (int i = 0; (i < p-1) && fork(); ++i);
 
-  /* Initialize backend */
+  /* Per-process backend initialization */
   load(1);
 
   /* Handle requests */

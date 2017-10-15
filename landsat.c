@@ -51,7 +51,7 @@
 const char * webmercator = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs";
 projPJ webmercator_pj = NULL;
 landsat_scene * scene = NULL;
-int scene_count = 3;
+int scene_count = -1;
 uint8_t tile[TILE_SIZE * TILE_SIZE * 4]; // RGBA ergo 4
 
 void load_scene(landsat_scene * s, int verbose);
@@ -62,38 +62,79 @@ uint8_t sigmoidal(uint16_t _u);
 void world_to_image(double * xy, landsat_scene * s);
 
 
-void load(int verbose)
+void preload(int verbose)
 {
+  char * wkt = NULL, * dstProj4 = NULL;
+  OGRSpatialReferenceH srs = NULL;
+  GDALDatasetH dataset;
+  char filename[FILENAME_LEN];
+
   GDALAllRegister();
 
+  scene_count = 3;
   scene = calloc(sizeof(landsat_scene), scene_count);
 
-  /* (scene + 0)->filename = "/tmp/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
-  /* (scene + 1)->filename = "/tmp/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
-  /* (scene + 2)->filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
-  /* (scene + 0)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
-  /* (scene + 1)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
-  /* (scene + 2)->filename = "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
-  /* //  docker run --rm -it --name my-apache-app -p 8080:80 -v /tmp/:/usr/local/apache2/htdocs/:ro httpd:2.4 */
-  /* (scene + 0)->filename = "/vsicurl/http://localhost:8080/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
-  /* (scene + 1)->filename = "/vsicurl/http://localhost:8080/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
-  /* (scene + 2)->filename = "/vsicurl/http://localhost:8080/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
-  (scene + 0)->filename = "/home/ec2-user/mnt/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF";
-  (scene + 1)->filename = "/home/ec2-user/mnt/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
-  (scene + 2)->filename = "/home/ec2-user/mnt/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF";
+  (scene + 0)->filename = "/tmp/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF";
+  (scene + 1)->filename = "/tmp/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF";
+  (scene + 2)->filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
+  /* (scene + 0)->filename = "/home/ec2-user/mnt/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
+  /* (scene + 1)->filename = "/home/ec2-user/mnt/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
+  /* (scene + 2)->filename = "/home/ec2-user/mnt/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
 
   webmercator_pj = pj_init_plus(webmercator);
+
+  /* Scene-specific setup */
+  for (int i = 0; i < scene_count; ++i) {
+    landsat_scene * s = scene + i;
+
+    /* Open red band file */
+    sprintf(filename, s->filename, 4);
+    if ((dataset = GDALOpen(filename, GA_ReadOnly)) == NULL) {
+      fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem" ANSI_COLOR_RESET "\n");
+      exit(-1);
+    }
+
+    /* SRS.  This is from the red band, but is assumed to be valid for
+       all of the bands. */
+    srs = OSRNewSpatialReference(NULL);
+    wkt = CPLMalloc(STRING_BUFFER_SIZE * sizeof(char)); // No memory leak, this is freed from within `OSRImportFromWkt`!
+    strncpy(wkt, GDALGetProjectionRef(dataset), STRING_BUFFER_SIZE);
+    if (verbose)
+      fprintf(stderr, ANSI_COLOR_GREEN "WKT=%s" ANSI_COLOR_RESET "\n", wkt);
+    OSRImportFromWkt(srs, &wkt);
+    OSRExportToProj4(srs, &dstProj4);
+    if (verbose)
+      fprintf(stderr, ANSI_COLOR_GREEN "Proj4=%s" ANSI_COLOR_RESET "\n", dstProj4);
+
+    /* Projection.  This is from the red band, but is assumed to be
+       valid for all of the bands. */
+    s->destination_pj = pj_init_plus(dstProj4);
+
+    /* Transform.  From the red band, but you know the score. */
+    GDALGetGeoTransform(dataset, s->transform);
+
+    /* Dimensions (from red band). */
+    s->width  = GDALGetRasterXSize(dataset);
+    s->height = GDALGetRasterYSize(dataset);
+
+    /* Cleanup */
+    CPLFree(dstProj4);
+    OSRRelease(srs);
+    GDALClose(dataset);
+  }
+}
+
+void load(int verbose)
+{
   for (int i = 0; i < scene_count; ++i)
     load_scene(scene + i, verbose);
 }
 
 void load_scene(landsat_scene * s, int verbose)
 {
-  char * wkt = NULL, * dstProj4 = NULL;
-  OGRSpatialReferenceH srs = NULL;
-  char r_filename[(1<<8)];
-  char g_filename[(1<<8)];
-  char b_filename[(1<<8)];
+  char r_filename[FILENAME_LEN];
+  char g_filename[FILENAME_LEN];
+  char b_filename[FILENAME_LEN];
 
   if (verbose)
     fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", s->filename);
@@ -121,29 +162,6 @@ void load_scene(landsat_scene * s, int verbose)
   s->r_band = GDALGetRasterBand(s->r_dataset, 1);
   s->g_band = GDALGetRasterBand(s->g_dataset, 1);
   s->b_band = GDALGetRasterBand(s->b_dataset, 1);
-  s->width  = GDALGetRasterXSize(s->r_dataset);
-  s->height = GDALGetRasterYSize(s->r_dataset);
-
-  /* SRS.  This is from the red band, but is assumed to be valid for
-     all of the bands. */
-  srs = OSRNewSpatialReference(NULL);
-  wkt = calloc(STRING_BUFFER_SIZE, sizeof(char)); // No memory leak, this is freed from within `OSRImportFromWkt`!
-  strncpy(wkt, GDALGetProjectionRef(s->r_dataset), STRING_BUFFER_SIZE);
-  if (verbose)
-    fprintf(stderr, ANSI_COLOR_GREEN "WKT=%s" ANSI_COLOR_RESET "\n", wkt);
-  OSRImportFromWkt(srs, &wkt);
-  OSRExportToProj4(srs, &dstProj4);
-  if (verbose)
-    fprintf(stderr, ANSI_COLOR_GREEN "Proj4=%s" ANSI_COLOR_RESET "\n", dstProj4);
-
-  s->destination_pj = pj_init_plus(dstProj4);
-
-  /* Transform.  This is from the red band, but is assumed to be valid
-     for all of the bands. */
-  GDALGetGeoTransform(s->r_dataset, s->transform);
-
-  CPLFree(dstProj4);
-  OSRRelease(srs);
 
   if (verbose)
     fprintf(stderr, ANSI_COLOR_BLUE "pid=%d" ANSI_COLOR_RESET "\n", getpid());

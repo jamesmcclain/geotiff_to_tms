@@ -35,6 +35,7 @@
 #include "gdal.h"
 #include "proj_api.h"
 
+#define FILENAME_LEN (1<<8)
 #define TILE_SIZE2 (TILE_SIZE * TILE_SIZE)
 
 
