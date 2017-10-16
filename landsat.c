@@ -171,7 +171,7 @@ int fetch(landsat_scene * s, int verbose)
   int window_width, window_height;
 
   // If the tile is disjoint from the source image, exit.
-  if ((s->xmin > s->src_width-1) || (s->ymin > s->src_height-1) || (s->xmax < 0) || (s->ymax < 0)) {
+  if ((s->xmin >= s->src_width-1) || (s->ymin >= s->src_height-1) || (s->xmax <= 0) || (s->ymax <= 0)) {
     return 0;
   }
 
@@ -182,10 +182,10 @@ int fetch(landsat_scene * s, int verbose)
   if (s->ymax > s->src_height-1) s->src_window_ymax = s->src_height-1; else s->src_window_ymax = s->ymax;
   window_width = s->src_window_xmax - s->src_window_xmin;
   window_height = s->src_window_ymax - s->src_window_ymin;
-  s->tile_window_xmin = TILE_SIZE*((s->src_window_xmin - s->xmin)/(s->xmax - s->xmin));
-  s->tile_window_ymin = TILE_SIZE*((s->src_window_ymin - s->ymin)/(s->ymax - s->ymin));
-  s->tile_window_width = TILE_SIZE*((s->src_window_xmax - s->src_window_xmin)/(s->xmax - s->xmin));
-  s->tile_window_height = TILE_SIZE*((s->src_window_ymax - s->src_window_ymin)/(s->ymax - s->ymin));
+  s->tile_window_xmin = floor(TILE_SIZE*((s->src_window_xmin - s->xmin)/(s->xmax - s->xmin)));
+  s->tile_window_ymin = floor(TILE_SIZE*((s->src_window_ymin - s->ymin)/(s->ymax - s->ymin)));
+  s->tile_window_width = ceil(TILE_SIZE*((s->src_window_xmax - s->src_window_xmin)/(s->xmax - s->xmin)));
+  s->tile_window_height = ceil(TILE_SIZE*((s->src_window_ymax - s->src_window_ymin)/(s->ymax - s->ymin)));
 
   /* if (verbose) { */
   /*   fprintf(stderr, */
@@ -317,10 +317,10 @@ void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose)
     }
   }
 
-  s->xmin = floor(xmin);
-  s->xmax = ceil(xmax);
-  s->ymin = floor(ymin);
-  s->ymax = ceil(ymax);
+  s->xmin = round(xmin);
+  s->xmax = round(xmax);
+  s->ymin = round(ymin);
+  s->ymax = round(ymax);
 
   s->dirty = fetch(s, verbose);
 }
@@ -380,10 +380,10 @@ void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose)
     ymax = fmax(right[i+1], fmax(left[i+1], fmax(bot[i+1], fmax(top[i+1], ymax))));
   }
 
-  s->xmin = floor(xmin);
-  s->xmax = ceil(xmax);
-  s->ymin = floor(ymin);
-  s->ymax = ceil(ymax);
+  s->xmin = round(xmin);
+  s->xmax = round(xmax);
+  s->ymin = round(ymin);
+  s->ymax = round(ymax);
 
   s->dirty = fetch(s, verbose);
 }
