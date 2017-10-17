@@ -46,6 +46,8 @@
 #include "ogr_srs_api.h"
 #include "proj_api.h"
 
+#define OVERZOOM_FACTOR (2)
+#define OVERZOOM (overzoom ? OVERZOOM_FACTOR : 1)
 
 const char * webmercator = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs";
 projPJ webmercator_pj = NULL;
@@ -54,9 +56,9 @@ int scene_count = -1;
 uint8_t tile[TILE_SIZE2<<2]; // RGBA ergo 4
 
 void load_scene(landsat_scene * s, int verbose);
-int fetch(landsat_scene * s, int verbose);
+int fetch(landsat_scene * s, int overzoom, int verbose);
 void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose);
-void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose);
+void zxy_exact(int z, int _x, int _y, int overzoom, landsat_scene * s, int verbose);
 uint8_t sigmoidal(uint16_t _u);
 void world_to_image(double * xy, landsat_scene * s);
 
@@ -93,8 +95,7 @@ void preload(int verbose)
       exit(-1);
     }
 
-    /* SRS.  This is from the red band, but is assumed to be valid for
-       all of the bands. */
+    /* SRS.  This is from the red band, but is assumed to be valid for all of the bands. */
     srs = OSRNewSpatialReference(NULL);
     wkt = CPLMalloc(STRING_BUFFER_SIZE * sizeof(char)); // No memory leak, this is freed from within `OSRImportFromWkt`!
     strncpy(wkt, GDALGetProjectionRef(dataset), STRING_BUFFER_SIZE);
@@ -105,8 +106,7 @@ void preload(int verbose)
     if (verbose)
       fprintf(stderr, ANSI_COLOR_GREEN "Proj4=%s" ANSI_COLOR_RESET "\n", dstProj4);
 
-    /* Projection.  This is from the red band, but is assumed to be
-       valid for all of the bands. */
+    /* Projection.  This is from the red band, but is assumed to be valid for all of the bands. */
     s->destination_pj = pj_init_plus(dstProj4);
 
     /* Transform.  From the red band, but you know the score. */
@@ -166,7 +166,7 @@ void load_scene(landsat_scene * s, int verbose)
     fprintf(stderr, ANSI_COLOR_BLUE "pid=%d" ANSI_COLOR_RESET "\n", getpid());
 }
 
-int fetch(landsat_scene * s, int verbose)
+int fetch(landsat_scene * s, int overzoom, int verbose)
 {
   int src_window_xmax, src_window_ymax;
 
@@ -201,21 +201,21 @@ int fetch(landsat_scene * s, int verbose)
   // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
   if (GDALRasterIO(s->r_band, GF_Read,
                    s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
-                   s->r_texture, s->tile_window_width, s->tile_window_height,
+                   s->r_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
                    GDT_UInt16, 0, 0)) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (red band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
   if (GDALRasterIO(s->g_band, GF_Read,
                    s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
-                   s->g_texture, s->tile_window_width, s->tile_window_height,
+                   s->g_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
                    GDT_UInt16, 0, 0)) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (green band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
   if (GDALRasterIO(s->b_band, GF_Read,
                    s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
-                   s->b_texture, s->tile_window_width, s->tile_window_height,
+                   s->b_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
                    GDT_UInt16, 0, 0)) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (blue band)" ANSI_COLOR_RESET "\n");
     exit(-1);
@@ -227,13 +227,14 @@ int fetch(landsat_scene * s, int verbose)
 void zxy(int fd, int z, int _x, int _y, int verbose)
 {
   int exact = (z < 7) ? 1 : 0;
+  int overzoom = (z < 3) ? 1 : 0;
 
-  #pragma omp parallel for schedule(dynamic, 1)
+  #pragma omp parallel for schedule(static, 1)
   for (int i = -1; i < scene_count; ++i) {
     if (i == -1)
       memset(tile, 0, sizeof(tile));
     else if (exact)
-      zxy_exact(z, _x, _y, scene + i, verbose);
+      zxy_exact(z, _x, _y, overzoom, scene + i, verbose);
     else if (!exact)
       zxy_approx(z, _x, _y, scene + i, verbose);
   }
@@ -254,12 +255,12 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
           double u = patch[patch_index + 0];
           double v = patch[patch_index + 1];
 
-          u = round((((u - s->xmin)/(s->xmax - s->xmin)) * (TILE_SIZE-1)));
-          v = round((((v - s->ymin)/(s->ymax - s->ymin)) * (TILE_SIZE-1)));
-          if ((s->tile_window_xmin <= u && u < s->tile_window_xmin+s->tile_window_width) &&
-              (s->tile_window_ymin <= v && v < s->tile_window_ymin+s->tile_window_height)) {
+          u = round((((u - s->xmin)/(s->xmax - s->xmin)) * (OVERZOOM*TILE_SIZE - 1))) - OVERZOOM*s->tile_window_xmin;
+          v = round((((v - s->ymin)/(s->ymax - s->ymin)) * (OVERZOOM*TILE_SIZE - 1))) - OVERZOOM*s->tile_window_ymin;
+          if ((0 <= u && u < OVERZOOM*s->tile_window_width) &&
+              (0 <= v && v < OVERZOOM*s->tile_window_height)) {
             uint8_t red, byte = 0;
-            int texture_index = (u-s->tile_window_xmin + (v-s->tile_window_ymin)*s->tile_window_width);
+            int texture_index = (u + v*OVERZOOM*s->tile_window_width);
 
             byte |= red = sigmoidal(s->r_texture[texture_index]);
             if (tile[tile_index + 3] == 0 || tile[tile_index + 0] < red) { // write into empty pixels
@@ -301,7 +302,7 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
-void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose)
+void zxy_exact(int z, int _x, int _y, int overzoom, landsat_scene * s, int verbose)
 {
   double * patch = s->coordinates.patch;
   double xmin = DBL_MAX, ymin = DBL_MAX;
@@ -319,12 +320,12 @@ void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose)
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE)<<1;
-      patch[index+0] = _x + (i/((double)TILE_SIZE));           // tile space
-      patch[index+0] /= pow(2.0, z);                           // 0-1 scaled, translated Web Mercator
-      patch[index+0] = (2*patch[index+0] - 1) * M_PI * RADIUS; // Web Mercator
-      patch[index+1] = _y + (j/((double)TILE_SIZE));
-      patch[index+1] /= pow(2.0, z);
-      patch[index+1] = (1 - 2*patch[index+1]) * M_PI * RADIUS;
+      patch[index + 0] = _x + (i/((double)TILE_SIZE));           // tile space
+      patch[index + 0] /= pow(2.0, z);                           // 0-1 scaled, translated Web Mercator
+      patch[index + 0] = (2*patch[index+0] - 1) * M_PI * RADIUS; // Web Mercator
+      patch[index + 1] = _y + (j/((double)TILE_SIZE));
+      patch[index + 1] /= pow(2.0, z);
+      patch[index + 1] = (1 - 2*patch[index+1]) * M_PI * RADIUS;
     }
   }
 
@@ -351,7 +352,7 @@ void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose)
   s->ymin = round(ymin);
   s->ymax = round(ymax);
 
-  s->dirty = fetch(s, verbose);
+  s->dirty = fetch(s, overzoom, verbose);
 }
 
 void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose)
@@ -415,7 +416,7 @@ void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose)
   s->ymin = round(ymin);
   s->ymax = round(ymax);
 
-  s->dirty = fetch(s, verbose);
+  s->dirty = fetch(s, 0, verbose);
 }
 
 uint8_t sigmoidal(uint16_t _u)

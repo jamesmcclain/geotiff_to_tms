@@ -73,7 +73,7 @@ int main(int argc, const char ** argv)
   preload(1);
   load(1);
   int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-  zxy(fd, 5, 23, 13, 1);
+  zxy(fd, 2, 2, 1, 1);
   fsync(fd); close(fd);
 #else
   /* Create socket */
