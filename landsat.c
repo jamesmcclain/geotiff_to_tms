@@ -168,7 +168,7 @@ void load_scene(landsat_scene * s, int verbose)
 
 int fetch(landsat_scene * s, int verbose)
 {
-  int window_width, window_height;
+  int src_window_xmax, src_window_ymax;
 
   // If the tile is disjoint from the source image, exit.
   if ((s->xmin >= s->src_width-1) || (s->ymin >= s->src_height-1) || (s->xmax <= 0) || (s->ymax <= 0)) {
@@ -178,14 +178,14 @@ int fetch(landsat_scene * s, int verbose)
   // Clip window to source data
   if (s->xmin < 0) s->src_window_xmin = 0; else s->src_window_xmin = s->xmin;
   if (s->ymin < 0) s->src_window_ymin = 0; else s->src_window_ymin = s->ymin;
-  if (s->xmax > s->src_width-1) s->src_window_xmax = s->src_width-1; else s->src_window_xmax = s->xmax;
-  if (s->ymax > s->src_height-1) s->src_window_ymax = s->src_height-1; else s->src_window_ymax = s->ymax;
-  window_width = s->src_window_xmax - s->src_window_xmin;
-  window_height = s->src_window_ymax - s->src_window_ymin;
+  if (s->xmax > s->src_width-1) src_window_xmax = s->src_width-1; else src_window_xmax = s->xmax;
+  if (s->ymax > s->src_height-1) src_window_ymax = s->src_height-1; else src_window_ymax = s->ymax;
+  s->src_window_width = src_window_xmax - s->src_window_xmin;
+  s->src_window_height = src_window_ymax - s->src_window_ymin;
   s->tile_window_xmin = floor(TILE_SIZE*((s->src_window_xmin - s->xmin)/(s->xmax - s->xmin)));
   s->tile_window_ymin = floor(TILE_SIZE*((s->src_window_ymin - s->ymin)/(s->ymax - s->ymin)));
-  s->tile_window_width = ceil(TILE_SIZE*((s->src_window_xmax - s->src_window_xmin)/(s->xmax - s->xmin)));
-  s->tile_window_height = ceil(TILE_SIZE*((s->src_window_ymax - s->src_window_ymin)/(s->ymax - s->ymin)));
+  s->tile_window_width = ceil(TILE_SIZE*((s->src_window_width)/(s->xmax - s->xmin)));
+  s->tile_window_height = ceil(TILE_SIZE*((s->src_window_height)/(s->ymax - s->ymin)));
 
   /* if (verbose) { */
   /*   fprintf(stderr, */
@@ -200,21 +200,21 @@ int fetch(landsat_scene * s, int verbose)
 
   // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
   if (GDALRasterIO(s->r_band, GF_Read,
-                   s->src_window_xmin, s->src_window_ymin, window_width, window_height,
+                   s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
                    s->r_texture, s->tile_window_width, s->tile_window_height,
                    GDT_UInt16, 0, 0)) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (red band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
   if (GDALRasterIO(s->g_band, GF_Read,
-                   s->src_window_xmin, s->src_window_ymin, window_width, window_height,
+                   s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
                    s->g_texture, s->tile_window_width, s->tile_window_height,
                    GDT_UInt16, 0, 0)) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (green band)" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
   if (GDALRasterIO(s->b_band, GF_Read,
-                   s->src_window_xmin, s->src_window_ymin, window_width, window_height,
+                   s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
                    s->b_texture, s->tile_window_width, s->tile_window_height,
                    GDT_UInt16, 0, 0)) {
     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (blue band)" ANSI_COLOR_RESET "\n");
@@ -305,7 +305,7 @@ void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose)
                TILE_SIZE*TILE_SIZE, 2,
                patch, patch+1, NULL);
 
-  /* world coordinates to image coordinates */
+  /* World coordinates to image coordinates */
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE)<<1;
@@ -317,6 +317,7 @@ void zxy_exact(int z, int _x, int _y, landsat_scene * s, int verbose)
     }
   }
 
+  /* Bounding box of the tile */
   s->xmin = round(xmin);
   s->xmax = round(xmax);
   s->ymin = round(ymin);
@@ -368,7 +369,7 @@ void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose)
   pj_transform(webmercator_pj, s->destination_pj,
                TILE_SIZE<<2, 2, top, top+1, NULL); //top, bot, left, right ergo shift
 
-  /* world coordinates to image coordinates */
+  /* World coordinates to image coordinates */
   for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
     world_to_image(top+i, s);
     world_to_image(bot+i, s);
@@ -380,6 +381,7 @@ void zxy_approx(int z, int _x, int _y, landsat_scene * s, int verbose)
     ymax = fmax(right[i+1], fmax(left[i+1], fmax(bot[i+1], fmax(top[i+1], ymax))));
   }
 
+  /* Bounding box of the tile */
   s->xmin = round(xmin);
   s->xmax = round(xmax);
   s->ymin = round(ymin);

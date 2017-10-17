@@ -81,16 +81,17 @@ typedef struct landsat_scene_struct {
   double xmin, xmax, ymin, ymax;
 
   // Information about the source image.  The bounding box given on
-  // the second line is the intersection of the source image with the
-  // tile.
+  // the second and third lines is the intersection of the source
+  // image with the tile.
   uint32_t src_width, src_height;
-  uint32_t src_window_xmin, src_window_xmax, src_window_ymin, src_window_ymax;
+  uint32_t src_window_xmin, src_window_ymin;
+  uint32_t src_window_width, src_window_height;
 
   // The starting point of the texture within the tile, as well as its
   // height and width.  Here, the red, green, and blue textures are
   // referred to in the singular.
-  uint32_t tile_window_xmin, tile_window_ymin, tile_window_width, tile_window_height;
-  // offset
+  uint32_t tile_window_xmin, tile_window_ymin;
+  uint32_t tile_window_width, tile_window_height;
 
   int dirty;
 
