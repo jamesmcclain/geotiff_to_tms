@@ -239,19 +239,46 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
   }
 
   // Sample from textures to produce tile
-  for (int i = 0; i < scene_count; ++i)
-    {
-
+  if (exact) {
+    for (int i = 0; i < scene_count; ++i) {
       landsat_scene * s = scene + i;
 
       if (!s->dirty) continue;
 
-      /* double * patch = s->coordinates.patch; */
-      /* double * top   = s->coordinates.periphery.top; */
-      /* double * bot   = s->coordinates.periphery.bot; */
-      /* double * left  = s->coordinates.periphery.left; */
-      /* double * right = s->coordinates.periphery.right; */
-      /* double xmin = s->xmin, xmax = s->xmax, ymin = s->ymin, ymax = s->ymax; */
+      const double * patch = s->coordinates.patch;
+
+      for (unsigned int j = 0; j < TILE_SIZE; ++j) {
+        for (unsigned int i = 0; i < TILE_SIZE; ++i) {
+          int patch_index = (i + j*TILE_SIZE)<<1;
+          int tile_index = patch_index<<1;
+          double u = patch[patch_index + 0];
+          double v = patch[patch_index + 1];
+
+          u = round((((u - s->xmin)/(s->xmax - s->xmin)) * (TILE_SIZE-1)));
+          v = round((((v - s->ymin)/(s->ymax - s->ymin)) * (TILE_SIZE-1)));
+          if ((s->tile_window_xmin <= u && u < s->tile_window_xmin+s->tile_window_width) &&
+              (s->tile_window_ymin <= v && v < s->tile_window_ymin+s->tile_window_height)) {
+            uint8_t red, byte = 0;
+            int texture_index = (u-s->tile_window_xmin + (v-s->tile_window_ymin)*s->tile_window_width);
+
+            byte |= red = sigmoidal(s->r_texture[texture_index]);
+            if (tile[tile_index + 3] == 0 || tile[tile_index + 0] < red) { // write into empty pixels
+              tile[tile_index + 0] = red;
+              byte |= tile[tile_index + 1] = sigmoidal(s->g_texture[texture_index]);
+              byte |= tile[tile_index + 2] = sigmoidal(s->b_texture[texture_index]);
+              tile[tile_index + 3] = (byte ? -1 : 0);
+            }
+          }
+        }
+      }
+    }
+  }
+  else {
+    for (int i = 0; i < scene_count; ++i) {
+
+      landsat_scene * s = scene + i;
+
+      if (!s->dirty) continue;
 
       for (unsigned int j = 0; (j < s->tile_window_height); ++j) {
         for (unsigned int i = 0; (i < s->tile_window_width); ++i) {
@@ -269,6 +296,7 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
         }
       }
     }
+  }
 
   write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
