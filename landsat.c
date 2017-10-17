@@ -59,10 +59,10 @@ int fetch(landsat_scene * s, int overzoom, int verbose);
 uint8_t sigmoidal(uint16_t _u);
 void load_scene(landsat_scene * s, int verbose);
 void world_to_image(double * xy, landsat_scene * s);
-void zxy_approx_post();
-void zxy_approx_pre(int z, int _x, int _y, landsat_scene * s, int verbose);
-void zxy_exact_post(int overzoom);
-void zxy_exact_pre(int z, int _x, int _y, int overzoom, landsat_scene * s, int verbose);
+void zxy_approx_commit();
+void zxy_approx_read(int z, int _x, int _y, landsat_scene * s, int verbose);
+void zxy_exact_commit(int overzoom);
+void zxy_exact_read(int z, int _x, int _y, int overzoom, landsat_scene * s, int verbose);
 
 
 void preload(int verbose)
@@ -234,21 +234,21 @@ void zxy(int fd, int z, int _x, int _y, int verbose)
     if (i == -1)
       memset(tile, 0, sizeof(tile));
     else if (exact)
-      zxy_exact_pre(z, _x, _y, overzoom, scene + i, verbose);
+      zxy_exact_read(z, _x, _y, overzoom, scene + i, verbose);
     else if (!exact)
-      zxy_approx_pre(z, _x, _y, scene + i, verbose);
+      zxy_approx_read(z, _x, _y, scene + i, verbose);
   }
 
   // Sample from textures to produce tile
   if (exact)
-    zxy_exact_post(overzoom);
+    zxy_exact_commit(overzoom);
   else
-    zxy_approx_post();
+    zxy_approx_commit();
 
   write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
-void zxy_exact_pre(int z, int _x, int _y, int overzoom, landsat_scene * s, int verbose)
+void zxy_exact_read(int z, int _x, int _y, int overzoom, landsat_scene * s, int verbose)
 {
   double * patch = s->coordinates.patch;
   double xmin = DBL_MAX, ymin = DBL_MAX;
@@ -302,7 +302,7 @@ void zxy_exact_pre(int z, int _x, int _y, int overzoom, landsat_scene * s, int v
   s->dirty = fetch(s, overzoom, verbose);
 }
 
-void zxy_approx_post()
+void zxy_approx_commit()
 {
   for (int i = 0; i < scene_count; ++i) {
 
@@ -328,7 +328,7 @@ void zxy_approx_post()
   }
 }
 
-void zxy_approx_pre(int z, int _x, int _y, landsat_scene * s, int verbose)
+void zxy_approx_read(int z, int _x, int _y, landsat_scene * s, int verbose)
 {
   double * top   = s->coordinates.periphery.top;
   double * bot   = s->coordinates.periphery.bot;
@@ -393,7 +393,7 @@ void zxy_approx_pre(int z, int _x, int _y, landsat_scene * s, int verbose)
   s->dirty = fetch(s, 0, verbose);
 }
 
-void zxy_exact_post(int overzoom)
+void zxy_exact_commit(int overzoom)
 {
   for (int i = 0; i < scene_count; ++i) {
     landsat_scene * s = scene + i;
@@ -411,6 +411,7 @@ void zxy_exact_post(int overzoom)
 
         u = round((((u - s->xmin)/(s->xmax - s->xmin)) * (OVERZOOM*TILE_SIZE - 1))) - OVERZOOM*s->tile_window_xmin;
         v = round((((v - s->ymin)/(s->ymax - s->ymin)) * (OVERZOOM*TILE_SIZE - 1))) - OVERZOOM*s->tile_window_ymin;
+
         if ((0 <= u && u < OVERZOOM*s->tile_window_width) &&
             (0 <= v && v < OVERZOOM*s->tile_window_height)) {
           uint8_t red, byte = 0;
