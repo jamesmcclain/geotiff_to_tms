@@ -67,15 +67,15 @@ int main(int argc, const char ** argv)
   /* Number of servers to prefork */
   if (argc > 1)
     sscanf(argv[1], "%d", &p);
+  fprintf(stderr, ANSI_COLOR_BLUE "P = %d" ANSI_COLOR_RESET "\n", p);
 
 #if 0
+  preload(1);
   load(1);
   int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-  zxy(fd, 3, 5, 3, 1);
+  zxy(fd, 2, 2, 1, 1);
   fsync(fd); close(fd);
-#endif
-
-#if 1
+#else
   /* Create socket */
   if ((fd1 = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
     fprintf(stderr, ANSI_COLOR_RED "'socket(2)' problem" ANSI_COLOR_RESET "\n");
@@ -96,10 +96,14 @@ int main(int argc, const char ** argv)
     exit(-1);
   }
 
+  /* Global backend initialization */
+  preload(1);
+
+  /* Fork */
   signal(SIGPIPE, SIG_IGN);
   for (int i = 0; (i < p-1) && fork(); ++i);
 
-  /* Initialize backend */
+  /* Per-process backend initialization */
   load(1);
 
   /* Handle requests */

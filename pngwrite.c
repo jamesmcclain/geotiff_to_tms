@@ -75,7 +75,7 @@ void write_png(int fd, const uint8_t * tile, unsigned int width, unsigned int he
   png_set_sBIT(png_ptr, info_ptr, &sig_bit);
   png_write_info(png_ptr, info_ptr);
 
-  for (png_uint_32 i = 0; i < height; i++)
+  for (png_uint_32 i = 0; i < height; ++i)
     row_pointers[i] = (png_bytep)(tile + i*width*4);
   png_write_image(png_ptr, row_pointers);
   png_write_end(png_ptr, info_ptr);
