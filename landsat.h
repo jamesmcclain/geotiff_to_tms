@@ -64,9 +64,9 @@ typedef struct landsat_scene_struct {
   GDALRasterBandH b_band;
 
   // Textures
-  uint16_t r_texture[TEXTURE_BUFFER_SIZE2];
-  uint16_t g_texture[TEXTURE_BUFFER_SIZE2];
-  uint16_t b_texture[TEXTURE_BUFFER_SIZE2];
+  uint16_t r_texture[TILE_SIZE2];
+  uint16_t g_texture[TILE_SIZE2];
+  uint16_t b_texture[TILE_SIZE2];
 
   // Projection
   projPJ destination_pj;
