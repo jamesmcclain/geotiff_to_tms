@@ -99,7 +99,9 @@ void preload(int verbose)
 
     /* SRS.  This is from the red band, but is assumed to be valid for all of the bands. */
     srs = OSRNewSpatialReference(NULL);
-    wkt = CPLMalloc(STRING_BUFFER_SIZE * sizeof(char)); // No memory leak, this is freed from within `OSRImportFromWkt`!
+    // This is never freed, but freeing wkt is not valid either.  The
+    // problem seems to originate from within GDAL.
+    wkt = CPLMalloc(STRING_BUFFER_SIZE * sizeof(char));
     strncpy(wkt, GDALGetProjectionRef(dataset), STRING_BUFFER_SIZE);
     if (verbose)
       fprintf(stderr, ANSI_COLOR_GREEN "WKT=%s" ANSI_COLOR_RESET "\n", wkt);
@@ -170,7 +172,10 @@ int fetch(landsat_scene * s, int overzoom, int verbose)
   int src_window_xmax, src_window_ymax;
 
   // If the tile is disjoint from the source image, exit.
-  if ((s->xmin >= s->src_width-1) || (s->ymin >= s->src_height-1) || (s->xmax <= 0) || (s->ymax <= 0)) {
+  if ((s->xmin >= s->src_width-1) ||
+      (s->ymin >= s->src_height-1) ||
+      (s->xmax <= 0) ||
+      (s->ymax <= 0)) {
     return 0;
   }
 
@@ -267,12 +272,12 @@ void zxy_exact_read(int z, int _x, int _y, int overzoom, landsat_scene * s, int 
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE)<<1;
-      patch[index + 0] = _x + (i/((double)TILE_SIZE));           // tile space
-      patch[index + 0] /= pow(2.0, z);                           // 0-1 scaled, translated Web Mercator
-      patch[index + 0] = (2*patch[index+0] - 1) * M_PI * RADIUS; // Web Mercator
-      patch[index + 1] = _y + (j/((double)TILE_SIZE));
-      patch[index + 1] /= pow(2.0, z);
-      patch[index + 1] = (1 - 2*patch[index+1]) * M_PI * RADIUS;
+      patch[index+0] = _x + (i/((double)(TILE_SIZE+1)));       // tile space
+      patch[index+0] /= pow(2.0, z);                           // 0-1 scaled, translated Web Mercator
+      patch[index+0] = (2*patch[index+0] - 1) * M_PI * RADIUS; // Web Mercator
+      patch[index+1] = _y + (j/((double)(TILE_SIZE+1)));
+      patch[index+1] /= pow(2.0, z);
+      patch[index+1] = (1 - 2*patch[index+1]) * M_PI * RADIUS;
     }
   }
 
