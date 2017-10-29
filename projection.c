@@ -29,22 +29,22 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __LANDSAT_SCENE_H__
-#define __LANDSAT_SCENE_H__
-
-#include "gdal.h"
-#include "cpl_conv.h"
-#include "ogr_srs_api.h"
-#include "proj_api.h"
-
-#define MAX_FILENAME_LEN (1<<8)
+#include "landsat_scene.h"
+#include "projection.h"
 
 
-struct landsat_scene {
-  char filename[MAX_FILENAME_LEN];
-  projPJ projection;
-  double transform[6];
-  double width, height; // Dimensions in image coordinates
-};
+void image_to_world(double * xy, const double * transform)
+{
+  // Source: http://www.gdal.org/classGDALDataset.html#a5101119705f5fa2bc1344ab26f66fd1d
+  double image_x = xy[0], image_y = xy[1];
+  xy[0] = transform[0] + image_x*transform[1] + image_y*transform[2];
+  xy[1] = transform[3] + image_x*transform[4] + image_y*transform[5];
+}
 
-#endif
+void world_to_image(double * xy, const double * transform)
+{
+  // Source: http://www.gdal.org/classGDALDataset.html#a5101119705f5fa2bc1344ab26f66fd1d
+  double world_x = xy[0], world_y = xy[1];
+  xy[0] = (-world_x*transform[5] + world_y*transform[2] + transform[0]*transform[5] - transform[2]*transform[3])/(transform[2]*transform[4] - transform[1]*transform[5]);
+  xy[1] = (world_x*transform[4] - world_y*transform[1] + transform[0]*transform[4] + transform[1]*transform[3])/(transform[2]*transform[4] - transform[1]*transform[5]);
+}

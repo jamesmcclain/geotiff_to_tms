@@ -29,22 +29,20 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __LANDSAT_SCENE_H__
-#define __LANDSAT_SCENE_H__
+#ifndef __PROJECTION_H__
+#define __PROJECTION_H__
 
-#include "gdal.h"
-#include "cpl_conv.h"
-#include "ogr_srs_api.h"
-#include "proj_api.h"
+#include "landsat_scene.h"
 
-#define MAX_FILENAME_LEN (1<<8)
+#ifdef __cplusplus
+extern "C" {
+#endif
 
+  void image_to_world(double * xy, const double * transform);
+  void world_to_image(double * xy, const double * transform);
 
-struct landsat_scene {
-  char filename[MAX_FILENAME_LEN];
-  projPJ projection;
-  double transform[6];
-  double width, height; // Dimensions in image coordinates
-};
+#ifdef __cplusplus
+}
+#endif
 
 #endif
