@@ -3,7 +3,7 @@ GDAL_LDFLAGS ?= $(shell gdal-config --libs) $(shell gdal-config --dep-libs)
 CC = gcc
 CXX = g++
 CFLAGS ?= -Wall -Wextra -O0 -ggdb3
-CXXFLAGS ?= $(CFLAGS)
+CXXFLAGS ?= -std=c++11 $(CFLAGS)
 LDFLAGS += -lproj $(GDAL_LDFLAGS)
 
 

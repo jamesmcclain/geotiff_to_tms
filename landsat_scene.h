@@ -29,48 +29,17 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 
-#include <boost/interprocess/managed_mapped_file.hpp>
-#include <boost/geometry.hpp>
-#include <boost/geometry/index/rtree.hpp>
+#ifndef __LANDSAT_SCENE_H__
+#define __LANDSAT_SCENE_H__
 
-#include "landsat_scene.h"
+#define MAX_FILENAME_LEN (1<<8)
 
-#define MAX_LEN (1<<10)
-#define PREFIX "https://s3-us-west-2.amazonaws.com/landsat-pds/"
-#define POSTFIX "index.html"
-#define DEFAULT "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
+struct landsat_scene {
+  char filename[MAX_FILENAME_LEN];
+  size_t crs;
+  double xmin, ymin;
+  double xmax, ymax;
+};
 
-
-int main(int argc, const char ** argv)
-{
-  std::vector<landsat_scene> scene_list;
-  char buffer[MAX_LEN];
-  char product_id[MAX_LEN];
-  char infix[MAX_LEN];
-  const char * prefix = DEFAULT;
-
-  // Prefix from command line
-  if (argc > 1) prefix = argv[1];
-
-  while (fgets(buffer, MAX_LEN, stdin) != NULL) {
-    struct landsat_scene scene;
-
-    sscanf(buffer, "%[^,]", product_id);
-    sscanf(strstr(buffer, PREFIX), PREFIX "%s", infix);
-    *(strstr(infix, POSTFIX)) = '\0';
-
-    sprintf(scene.filename, "%s%s%s_B%%d.TIF", prefix, infix, product_id);
-    scene_list.push_back(scene);
-  }
-
-  fprintf(stdout, "%ld\n", scene_list.size());
-  for (auto i = scene_list.begin(); i != scene_list.end(); ++i) {
-    fprintf(stdout, "%s\n", i->filename);
-  }
-
-  return 0;
-}
+#endif
