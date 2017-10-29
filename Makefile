@@ -18,6 +18,9 @@ landsat-server: server.o landsat.o pngwrite.o fullio.o
 landsat.o: landsat.c landsat.h load.h constants.h
 	$(CC) -fopenmp $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
 
+landsat-index.o: landsat-index.cpp landsat_scene.h
+	$(CXX) -fopenmp $(CXXFLAGS) $(GDAL_CFLAGS) $< -c -o $@
+
 %.o: %.c %.h
 	$(CC) $(CFLAGS) $< -c -o $@
 
