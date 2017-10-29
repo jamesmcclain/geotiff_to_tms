@@ -1,4 +1,5 @@
 cachegrind.out.*
+landsat-index
 landsat-server
 *.o
 .terraform
