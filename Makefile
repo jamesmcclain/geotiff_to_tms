@@ -10,10 +10,10 @@ LDFLAGS += -lproj $(GDAL_LDFLAGS)
 all: landsat-index landsat-server
 
 landsat-index: landsat-index.o projection.o
-	$(CXX) $(LDFLAGS) -fopenmp $^ -o $@
+	$(CXX) $^ $(LDFLAGS) -fopenmp -o $@
 
 landsat-server: server.o landsat.o pngwrite.o fullio.o
-	$(CC) $(LDFLAGS) -fopenmp $^ -o $@
+	$(CC) $^ $(LDFLAGS) -fopenmp -o $@
 
 landsat.o: landsat.c landsat.h load.h constants.h
 	$(CC) -fopenmp $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
