@@ -195,11 +195,17 @@ int main(int argc, const char ** argv)
     bounding_box(scene_list[i]);
   }
 
-  // Build R-Tree
+  // Disk-backed memory
   bi::managed_mapped_file file(bi::create_only, indexfile, 1<<order_of_magnitude);
-  allocator_t alloc(file.get_segment_manager());
-  rtree_t * rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);
-  rtree_ptr->insert(scene_list);
+
+  // Build R-Tree
+  // Resource: http://www.boost.org/doc/libs/1_63_0/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
+  {
+    allocator_t alloc(file.get_segment_manager());
+    rtree_t * rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);
+    rtree_ptr->insert(scene_list);
+  }
+  bi::managed_mapped_file::shrink_to_fit(indexfile);
 
   return 0;
 }
