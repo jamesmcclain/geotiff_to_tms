@@ -12,16 +12,16 @@ all: landsat-index landsat-server
 landsat-index: landsat-index.o projection.o
 	$(CXX) $^ $(LDFLAGS) -fopenmp -o $@
 
-landsat-server: server.o landsat-server.o pngwrite.o fullio.o
+landsat-server: server.o landsat-server.o pngwrite.o fullio.o projection.o
 	$(CC) $^ $(LDFLAGS) -fopenmp -o $@
 
-landsat-server.o: landsat-server.c landsat.h load.h constants.h
+landsat-server.o: landsat-server.c greater_landsat_scene.h load.h constants.h
 	$(CC) -fopenmp $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
 
-landsat-index.o: landsat-index.cpp landsat_scene.h
+landsat-index.o: landsat-index.cpp lesser_landsat_scene.h
 	$(CXX) -fopenmp $(CXXFLAGS) $(GDAL_CFLAGS) $< -c -o $@
 
-projection.o: projection.c projection.h landsat_scene.h
+projection.o: projection.c projection.h
 	$(CC) $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
 
 %.o: %.c %.h

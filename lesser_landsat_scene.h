@@ -32,19 +32,20 @@
 #ifndef __LANDSAT_SCENE_H__
 #define __LANDSAT_SCENE_H__
 
-#include "gdal.h"
-#include "cpl_conv.h"
-#include "ogr_srs_api.h"
+#include <stdint.h>
 #include "proj_api.h"
 
 #define MAX_FILENAME_LEN (1<<8)
+#define DEFAULT_PREFIX "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
+#define DEFAULT_INDEXFILE "/tmp/index.data"
+#define WEBMERCATOR "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs"
 
 
-struct landsat_scene {
+struct lesser_landsat_scene_struct {
   char filename[MAX_FILENAME_LEN];
   projPJ projection;
   double transform[6];
-  double width, height; // Dimensions in image coordinates
+  uint32_t width, height; // Dimensions in image coordinates
 };
 
 #endif

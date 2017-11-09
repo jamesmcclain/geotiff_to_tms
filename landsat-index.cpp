@@ -46,17 +46,15 @@
 #include "proj_api.h"
 
 #include "ansi.h"
-#include "landsat_scene.h"
+#include "lesser_landsat_scene.h"
 #include "projection.h"
 
 #define MAX_LEN (1<<10)
 #define INCREMENTS (1<<8)
 #define PREFIX "https://s3-us-west-2.amazonaws.com/landsat-pds/"
 #define POSTFIX "index.html"
-#define DEFAULT_PREFIX "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
-#define DEFAULT_INDEXFILE "/tmp/index.data"
 
-const char * webmercator = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs";
+const char * webmercator = WEBMERCATOR;
 projPJ webmercator_pj = NULL;
 
 namespace bi  = boost::interprocess;
@@ -67,7 +65,7 @@ namespace bgi = boost::geometry::index;
 // Resource: http://www.boost.org/doc/libs/1_63_0/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
 typedef bgm::point<double, 2, bg::cs::cartesian> point_t;
 typedef bgm::box<point_t> box_t;
-typedef std::pair<box_t, landsat_scene> value_t;
+typedef std::pair<box_t, lesser_landsat_scene_struct> value_t;
 typedef bgi::linear<32,8> params_t;
 typedef bgi::indexable<value_t> indexable_t;
 typedef bgi::equal_to<value_t> equal_to_t;
@@ -75,7 +73,7 @@ typedef bi::allocator<value_t, bi::managed_mapped_file::segment_manager> allocat
 typedef bgi::rtree<value_t, params_t, indexable_t, equal_to_t, allocator_t> rtree_t;
 
 
-void bounding_box(std::pair<box_t, landsat_scene> & pair)
+void bounding_box(std::pair<box_t, lesser_landsat_scene_struct> & pair)
 {
   double xmin = DBL_MAX;
   double ymin = DBL_MAX;
@@ -90,8 +88,8 @@ void bounding_box(std::pair<box_t, landsat_scene> & pair)
   for (int i = 0; i < INCREMENTS; ++i) {
     t[2*i + 0] = b[2*i + 0] = 0.5 + static_cast<double>(i*pair.second.width)/INCREMENTS;  // x values across the top and bottom
     t[2*i + 1] = l[2*i + 0] = 0.0;                                                        // y values across the top and x values on the left// XXX
-    b[2*i + 1] = pair.second.height;                                                      // y values across the bottom
-    r[2*i + 0] = pair.second.width;                                                       // x values on the right
+    b[2*i + 1] = static_cast<double>(pair.second.height);                                 // y values across the bottom
+    r[2*i + 0] = static_cast<double>(pair.second.width);                                  // x values on the right
     l[2*i + 1] = r[2*i + 1] = 0.5 + static_cast<double>(i*pair.second.height)/INCREMENTS; // y values on the left and right
 
     image_to_world(t + 2*i, pair.second.transform);
@@ -121,7 +119,7 @@ void bounding_box(std::pair<box_t, landsat_scene> & pair)
   free(t);
 }
 
-void metadata(const char * prefix, struct landsat_scene & s, int verbose)
+void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int verbose)
 {
   char * wkt = NULL, * proj4 = NULL;
   OGRSpatialReferenceH srs = NULL;
@@ -185,7 +183,7 @@ int main(int argc, const char ** argv)
     sscanf(buffer, "%[^,]", product_id);
     sscanf(strstr(buffer, PREFIX), PREFIX "%s", infix);
     *(strstr(infix, POSTFIX)) = '\0';
-    scene_list.push_back(std::make_pair(box_t(point_t(0, 0), point_t(1, 1)), landsat_scene()));
+    scene_list.push_back(std::make_pair(box_t(point_t(0, 0), point_t(1, 1)), lesser_landsat_scene_struct()));
     sprintf(scene_list.back().second.filename, "%s%s_B%%d.TIF", infix, product_id);
   }
   fprintf(stderr, ANSI_COLOR_BLUE "scenes \t\t\t =" ANSI_COLOR_GREEN " %ld" ANSI_COLOR_RESET "\n", scene_list.size());

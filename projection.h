@@ -32,7 +32,6 @@
 #ifndef __PROJECTION_H__
 #define __PROJECTION_H__
 
-#include "landsat_scene.h"
 
 #ifdef __cplusplus
 extern "C" {

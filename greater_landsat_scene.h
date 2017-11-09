@@ -33,8 +33,12 @@
 #define __LANDSAT_H__
 
 #include "gdal.h"
+#include "cpl_conv.h"
+#include "ogr_srs_api.h"
 #include "proj_api.h"
+
 #include "constants.h"
+#include "lesser_landsat_scene.h"
 
 
 struct periphery_struct {
@@ -49,9 +53,8 @@ union coordinates_struct {
   double patch [TILE_SIZE2<<1]; // two coordinates ergo shift
 };
 
-typedef struct landsat_scene_struct {
-  // Filename
-  const char * filename;
+typedef struct greater_landsat_scene_struct {
+  struct lesser_landsat_scene_struct lesser;
 
   // Datasets
   GDALDatasetH r_dataset;
@@ -67,12 +70,6 @@ typedef struct landsat_scene_struct {
   uint16_t r_texture[TILE_SIZE2];
   uint16_t g_texture[TILE_SIZE2];
   uint16_t b_texture[TILE_SIZE2];
-
-  // Projection
-  projPJ destination_pj;
-
-  // Transform
-  double transform[6];
 
   // Coordinates
   union coordinates_struct coordinates;

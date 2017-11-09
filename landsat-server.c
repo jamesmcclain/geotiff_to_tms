@@ -37,14 +37,11 @@
 #include <math.h>
 
 #include "ansi.h"
-#include "landsat.h"
+#include "greater_landsat_scene.h"
 #include "load.h"
 #include "pngwrite.h"
+#include "projection.h"
 
-#include "gdal.h"
-#include "cpl_conv.h"
-#include "ogr_srs_api.h"
-#include "proj_api.h"
 
 #define OVERZOOM_FACTOR (2)
 #define OVERZOOM (overzoom ? OVERZOOM_FACTOR : 1)
@@ -58,7 +55,6 @@ uint8_t tile[TILE_SIZE2<<2]; // RGBA ergo 4
 int fetch(landsat_scene * s, int overzoom, int verbose);
 uint8_t sigmoidal(uint16_t _u);
 void load_scene(landsat_scene * s, int verbose);
-void world_to_image(double * xy, landsat_scene * s);
 void zxy_approx_commit();
 void zxy_approx_read(int z, int _x, int _y, landsat_scene * s, int verbose);
 void zxy_exact_commit(int overzoom);
@@ -77,12 +73,12 @@ void preload(int verbose)
   scene_count = 3;
   scene = calloc(sizeof(landsat_scene), scene_count);
 
-  (scene + 0)->filename = "/tmp/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF";
-  (scene + 1)->filename = "/tmp/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF";
-  (scene + 2)->filename = "/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF";
-  /* (scene + 0)->filename = "/home/ec2-user/mnt/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
-  /* (scene + 1)->filename = "/home/ec2-user/mnt/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
-  /* (scene + 2)->filename = "/home/ec2-user/mnt/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
+  strncpy("/tmp/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF", (scene + 0)->lesser.filename, MAX_FILENAME_LEN);
+  strncpy("/tmp/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF", (scene + 1)->lesser.filename, MAX_FILENAME_LEN);
+  strncpy("/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF", (scene + 2)->lesser.filename, MAX_FILENAME_LEN);
+  /* (scene + 0)->lesser.filename = "/home/ec2-user/mnt/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
+  /* (scene + 1)->lesser.filename = "/home/ec2-user/mnt/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
+  /* (scene + 2)->lesser.filename = "/home/ec2-user/mnt/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
 
   webmercator_pj = pj_init_plus(webmercator);
 
@@ -91,7 +87,7 @@ void preload(int verbose)
     landsat_scene * s = scene + i;
 
     /* Open red band file */
-    sprintf(filename, s->filename, 4);
+    sprintf(filename, s->lesser.filename, 4);
     if ((dataset = GDALOpen(filename, GA_ReadOnly)) == NULL) {
       fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem" ANSI_COLOR_RESET "\n");
       exit(-1);
@@ -111,10 +107,10 @@ void preload(int verbose)
       fprintf(stderr, ANSI_COLOR_GREEN "Proj4=%s" ANSI_COLOR_RESET "\n", dstProj4);
 
     /* Projection.  This is from the red band, but is assumed to be valid for all of the bands. */
-    s->destination_pj = pj_init_plus(dstProj4);
+    s->lesser.projection = pj_init_plus(dstProj4);
 
     /* Transform.  From the red band, but you know the score. */
-    GDALGetGeoTransform(dataset, s->transform);
+    GDALGetGeoTransform(dataset, s->lesser.transform);
 
     /* Dimensions (from red band). */
     s->src_width  = GDALGetRasterXSize(dataset);
@@ -140,11 +136,11 @@ void load_scene(landsat_scene * s, int verbose)
   char b_filename[FILENAME_LEN];
 
   if (verbose)
-    fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", s->filename);
+    fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", s->lesser.filename);
 
-  sprintf(r_filename, s->filename, 4);
-  sprintf(g_filename, s->filename, 3);
-  sprintf(b_filename, s->filename, 2);
+  sprintf(r_filename, s->lesser.filename, 4); // XXX needs prefix
+  sprintf(g_filename, s->lesser.filename, 3); // XXX needs prefix
+  sprintf(b_filename, s->lesser.filename, 2); // XXX needs prefix
 
   /* Datasets and bands */
   s->r_dataset = GDALOpen(r_filename, GA_ReadOnly);
@@ -282,7 +278,7 @@ void zxy_exact_read(int z, int _x, int _y, int overzoom, landsat_scene * s, int 
   }
 
   /* Web Mercator to world coordinates */
-  pj_transform(webmercator_pj, s->destination_pj,
+  pj_transform(webmercator_pj, s->lesser.projection,
                TILE_SIZE*TILE_SIZE, 2,
                patch, patch+1, NULL);
 
@@ -290,7 +286,7 @@ void zxy_exact_read(int z, int _x, int _y, int overzoom, landsat_scene * s, int 
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE)<<1;
-      world_to_image(patch+index, s);
+      world_to_image(patch+index, s->lesser.transform);
       xmin = fmin(patch[index+0], xmin);
       xmax = fmax(patch[index+0], xmax);
       ymin = fmin(patch[index+1], ymin);
@@ -374,15 +370,15 @@ void zxy_approx_read(int z, int _x, int _y, landsat_scene * s, int verbose)
   }
 
   /* Web Mercator to world coordinates */
-  pj_transform(webmercator_pj, s->destination_pj,
+  pj_transform(webmercator_pj, s->lesser.projection,
                TILE_SIZE<<2, 2, top, top+1, NULL); //top, bot, left, right ergo shift
 
   /* World coordinates to image coordinates */
   for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
-    world_to_image(top+i, s);
-    world_to_image(bot+i, s);
-    world_to_image(left+i, s);
-    world_to_image(right+i, s);
+    world_to_image(top+i, s->lesser.transform);
+    world_to_image(bot+i, s->lesser.transform);
+    world_to_image(left+i, s->lesser.transform);
+    world_to_image(right+i, s->lesser.transform);
     xmin = fmin(right[i], fmin(left[i], fmin(bot[i], fmin(top[i], xmin))));
     xmax = fmax(right[i], fmax(left[i], fmax(bot[i], fmax(top[i], xmax))));
     ymin = fmin(right[i+1], fmin(left[i+1], fmin(bot[i+1], fmin(top[i+1], ymin))));
@@ -445,13 +441,4 @@ uint8_t sigmoidal(uint16_t _u)
   double denom = 1/(1+exp(beta*(alpha-1))) - 1/(1+exp(beta*alpha));
   double gu = fmax(0.0, fmin(1.0, numer / denom));
   return ((1<<8)-1)*gu;
-}
-
-void world_to_image(double * xy, landsat_scene * s)
-{
-  double world_x = xy[0], world_y = xy[1];
-
-  // Source: http://www.gdal.org/classGDALDataset.html#a5101119705f5fa2bc1344ab26f66fd1d
-  xy[0] = (-world_x*s->transform[5] + world_y*s->transform[2] + s->transform[0]*s->transform[5] - s->transform[2]*s->transform[3])/(s->transform[2]*s->transform[4] - s->transform[1]*s->transform[5]);
-  xy[1] = (world_x*s->transform[4] - world_y*s->transform[1] + s->transform[0]*s->transform[4] + s->transform[1]*s->transform[3])/(s->transform[2]*s->transform[4] - s->transform[1]*s->transform[5]);
 }
