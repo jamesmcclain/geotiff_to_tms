@@ -13,10 +13,10 @@ landsat-index: landsat-index.o projection.o
 	$(CXX) $^ $(LDFLAGS) -fopenmp -o $@
 
 landsat-server: server.o landsat-server.o pngwrite.o fullio.o projection.o
-	$(CC) $^ $(LDFLAGS) -fopenmp -o $@
+	$(CXX) $^ $(LDFLAGS) -fopenmp -o $@
 
-landsat-server.o: landsat-server.c greater_landsat_scene.h load.h constants.h
-	$(CC) -fopenmp $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
+landsat-server.o: landsat-server.cpp greater_landsat_scene.h load.h constants.h
+	$(CXX) -fopenmp $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
 
 landsat-index.o: landsat-index.cpp lesser_landsat_scene.h
 	$(CXX) -fopenmp $(CXXFLAGS) $(GDAL_CFLAGS) $< -c -o $@

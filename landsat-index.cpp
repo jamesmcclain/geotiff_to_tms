@@ -83,6 +83,7 @@ void bounding_box(std::pair<box_t, lesser_landsat_scene_struct> & pair)
   double * b = static_cast<double *>(calloc(INCREMENTS, 2*sizeof(double)));
   double * l = static_cast<double *>(calloc(INCREMENTS, 2*sizeof(double)));
   double * r = static_cast<double *>(calloc(INCREMENTS, 2*sizeof(double)));
+  projPJ projection_pj = NULL;
 
   // Get world coordinates around the periphery
   for (int i = 0; i < INCREMENTS; ++i) {
@@ -99,10 +100,12 @@ void bounding_box(std::pair<box_t, lesser_landsat_scene_struct> & pair)
   }
 
   // Get WebMercator coordinates
-  pj_transform(webmercator_pj, pair.second.projection, INCREMENTS, 2, t+0, t+1, NULL);
-  pj_transform(webmercator_pj, pair.second.projection, INCREMENTS, 2, b+0, b+1, NULL);
-  pj_transform(webmercator_pj, pair.second.projection, INCREMENTS, 2, l+0, l+1, NULL);
-  pj_transform(webmercator_pj, pair.second.projection, INCREMENTS, 2, r+0, r+1, NULL);
+  projection_pj = pj_init_plus(pair.second.proj4);
+  pj_transform(webmercator_pj, projection_pj, INCREMENTS, 2, t+0, t+1, NULL);
+  pj_transform(webmercator_pj, projection_pj, INCREMENTS, 2, b+0, b+1, NULL);
+  pj_transform(webmercator_pj, projection_pj, INCREMENTS, 2, l+0, l+1, NULL);
+  pj_transform(webmercator_pj, projection_pj, INCREMENTS, 2, r+0, r+1, NULL);
+  pj_free(projection_pj);
 
   // Get WebMercator bounding box
   for (int i = 0; i < INCREMENTS; ++i) {
@@ -141,7 +144,7 @@ void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int v
   strncpy(wkt, GDALGetProjectionRef(dataset), MAX_LEN);
   OSRImportFromWkt(srs, &wkt);
   OSRExportToProj4(srs, &proj4);
-  s.projection = pj_init_plus(proj4);
+  strncpy(s.proj4, proj4, 1<<8);
 
   // Get transform
   GDALGetGeoTransform(dataset, s.transform);
