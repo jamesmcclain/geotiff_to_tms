@@ -29,21 +29,73 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __LANDSAT_SCENE_H__
-#define __LANDSAT_SCENE_H__
+#ifndef __HANDLES_H__
+#define __HANDLES_H__
 
-#include <stdint.h>
+#include "lesser_landsat_scene.h"
+#include "gdal.h"
+#include "cpl_conv.h"
+#include "ogr_srs_api.h"
+#include "proj_api.h"
 
-#define DEFAULT_PREFIX "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
-#define DEFAULT_INDEXFILE "/tmp/index.data"
-#define WEBMERCATOR "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs"
 
+// Resource: https://en.wikipedia.org/wiki/Rule_of_three_(C++_programming)
+class landsat_scene_handles {
 
-struct lesser_landsat_scene_struct {
-  char filename[1<<8];
-  char proj4[1<<8];
-  double transform[6];
-  uint32_t width, height; // Dimensions in image coordinates
+ public:
+  landsat_scene_handles() :
+    r(nullptr), g(nullptr), b(nullptr), p(nullptr) {}
+
+  landsat_scene_handles(const landsat_scene_handles & other) :
+    r(other.r), g(other.g), b(other.b), p(other.p) {}
+
+  landsat_scene_handles(landsat_scene_handles && other) noexcept :
+    r(other.r), g(other.g), b(other.b), p(other.p)
+  {
+    other.r = other.g = other.b = other.p = nullptr;
+  }
+
+  landsat_scene_handles & operator=(const landsat_scene_handles & other)
+  {
+    landsat_scene_handles tmp(other);
+    *this = std::move(tmp);
+    return *this;
+  }
+
+  landsat_scene_handles & operator=(landsat_scene_handles && other) noexcept
+  {
+    pj_free(p);
+    GDALClose(b);
+    GDALClose(g);
+    GDALClose(r);
+
+    r = other.r;
+    g = other.g;
+    b = other.b;
+    p = other.p;
+
+    other.r = other.g = other.b = other.p = nullptr;
+
+    return *this;
+  }
+
+  landsat_scene_handles(GDALDatasetH red, GDALDatasetH green, GDALDatasetH blue, projPJ proj) :
+    r(red), g(green), b(blue), p(proj) {}
+
+  ~landsat_scene_handles() noexcept
+  {
+    pj_free(p);
+    GDALClose(b);
+    GDALClose(g);
+    GDALClose(r);
+  }
+
+ private:
+  GDALDatasetH r;
+  GDALDatasetH g;
+  GDALDatasetH b;
+  projPJ p;
+
 };
 
 #endif

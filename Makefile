@@ -1,9 +1,10 @@
+LRU_CFLAGS ?= -I../lru-cache/include
 GDAL_CFLAGS ?= $(shell gdal-config --cflags)
 GDAL_LDFLAGS ?= $(shell gdal-config --libs) $(shell gdal-config --dep-libs)
 CC = gcc
 CXX = g++
 CFLAGS ?= -Wall -Wextra -O0 -ggdb3
-CXXFLAGS ?= -std=c++14 $(CFLAGS)
+CXXFLAGS ?= -std=c++17 $(CFLAGS)
 LDFLAGS += -lproj $(GDAL_LDFLAGS)
 
 
@@ -15,8 +16,8 @@ landsat-index: landsat-index.o projection.o
 landsat-server: server.o landsat-server.o pngwrite.o fullio.o projection.o
 	$(CXX) $^ $(LDFLAGS) -fopenmp -o $@
 
-landsat-server.o: landsat-server.cpp greater_landsat_scene.h load.h constants.h
-	$(CXX) -fopenmp $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
+landsat-server.o: landsat-server.cpp load.h constants.h landsat_scene_handles.hpp greater_landsat_scene.h lesser_landsat_scene.h
+	$(CXX) -fopenmp $(CXXFLAGS) $(GDAL_CFLAGS) $(LRU_CFLAGS) $< -c -o $@
 
 landsat-index.o: landsat-index.cpp lesser_landsat_scene.h
 	$(CXX) -fopenmp $(CXXFLAGS) $(GDAL_CFLAGS) $< -c -o $@

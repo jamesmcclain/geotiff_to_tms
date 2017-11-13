@@ -42,11 +42,13 @@
 #include <boost/geometry/geometries/point.hpp>
 #include <boost/geometry/geometries/box.hpp>
 #include <boost/geometry/index/rtree.hpp>
-// #include <boost/function_output_iterator.hpp>
+
+#include <lru/lru.hpp>
 
 #include "ansi.h"
 #include "lesser_landsat_scene.h"
 #include "greater_landsat_scene.h"
+#include "landsat_scene_handles.hpp"
 #include "load.h"
 #include "pngwrite.h"
 #include "projection.h"
@@ -65,6 +67,7 @@ typedef bgi::indexable<value_t> indexable_t;
 typedef bgi::equal_to<value_t> equal_to_t;
 typedef bi::allocator<value_t, bi::managed_mapped_file::segment_manager> allocator_t;
 typedef bgi::rtree<value_t, params_t, indexable_t, equal_to_t, allocator_t> rtree_t;
+typedef LRU::Cache<const char *, landsat_scene_handles> cache;
 
 const char * indexfile = NULL;
 const char * prefix = NULL;
@@ -89,11 +92,6 @@ projPJ webmercator_pj = NULL;
 // void zxy_exact_read(int z, int _x, int _y, int overzoom, landsat_scene * s, int verbose);
 
 
-void load_scene(value_t & s)
-{
-  s.second.projection_ptr = pj_init_plus(s.second.proj4);
-}
-
 void preload(int verbose, void * extra)
 {
   GDALAllRegister();
@@ -106,24 +104,9 @@ void preload(int verbose, void * extra)
   allocator_t alloc(file.get_segment_manager());
   rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);
 
-  // rtree_ptr->query(bgi::intersects(rtree_ptr->bounds()),
-  //                  boost::make_function_output_iterator(load_scene));
-
-  // scene_count = 3;
-  // scene = static_cast<landsat_scene *>(calloc(sizeof(landsat_scene), scene_count));
-
-  // strncpy("/tmp/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF", (scene + 0)->lesser.filename, MAX_FILENAME_LEN);
-  // strncpy("/tmp/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF", (scene + 1)->lesser.filename, MAX_FILENAME_LEN);
-  // strncpy("/tmp/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF", (scene + 2)->lesser.filename, MAX_FILENAME_LEN);
-  // /* (scene + 0)->lesser.filename = "/home/ec2-user/mnt/c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF"; */
-  // /* (scene + 1)->lesser.filename = "/home/ec2-user/mnt/c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF"; */
-  // /* (scene + 2)->lesser.filename = "/home/ec2-user/mnt/c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF"; */
-
-  // webmercator_pj = pj_init_plus(webmercator);
-
-  // /* Scene-specific setup */
-  // for (int i = 0; i < scene_count; ++i) {
-  //   landsat_scene * s = scene + i;
+  // /c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF
+  // /c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF
+  // /c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF
 
   //   /* Open red band file */
   //   sprintf(filename, s->lesser.filename, 4);
@@ -132,40 +115,11 @@ void preload(int verbose, void * extra)
   //     exit(-1);
   //   }
 
-  //   /* SRS.  This is from the red band, but is assumed to be valid for all of the bands. */
-  //   srs = OSRNewSpatialReference(NULL);
-  //   // This is never freed, but freeing wkt is not valid either.  The
-  //   // problem seems to originate from within GDAL.
-  //   wkt = static_cast<char *>(CPLMalloc(STRING_BUFFER_SIZE * sizeof(char)));
-  //   strncpy(wkt, GDALGetProjectionRef(dataset), STRING_BUFFER_SIZE);
-  //   if (verbose)
-  //     fprintf(stderr, ANSI_COLOR_GREEN "WKT=%s" ANSI_COLOR_RESET "\n", wkt);
-  //   OSRImportFromWkt(srs, &wkt);
-  //   OSRExportToProj4(srs, &dstProj4);
-  //   if (verbose)
-  //     fprintf(stderr, ANSI_COLOR_GREEN "Proj4=%s" ANSI_COLOR_RESET "\n", dstProj4);
-
-  //   /* Projection.  This is from the red band, but is assumed to be valid for all of the bands. */
-  //   s->lesser.projection = pj_init_plus(dstProj4);
-
-  //   /* Transform.  From the red band, but you know the score. */
-  //   GDALGetGeoTransform(dataset, s->lesser.transform);
-
-  //   /* Dimensions (from red band). */
-  //   s->src_width  = GDALGetRasterXSize(dataset);
-  //   s->src_height = GDALGetRasterYSize(dataset);
-
-  //   /* Cleanup */
-  //   CPLFree(dstProj4);
-  //   OSRRelease(srs);
-  //   GDALClose(dataset);
   // }
 }
 
 void load(int verbose, void * extra)
 {
-  // for (int i = 0; i < scene_count; ++i)
-  //   load_scene(scene + i, verbose);
 }
 
 // void load_scene(landsat_scene * s, int verbose)
