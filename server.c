@@ -69,12 +69,12 @@ int main(int argc, const char ** argv)
     sscanf(argv[1], "%d", &p);
   fprintf(stderr, ANSI_COLOR_BLUE "P = %d" ANSI_COLOR_RESET "\n", p);
 
-#if 0
+#if 1
   preload(1, NULL);
   load(1, NULL);
   int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
   zxy(fd, 2, 2, 1, 1, NULL);
-  fsync(fd); close(fd);
+  fsync(fd); shutdown(fd, SHUT_RDWR); close(fd);
 #else
   /* Create socket */
   if ((fd1 = socket(PF_INET, SOCK_STREAM, 0)) == -1) {

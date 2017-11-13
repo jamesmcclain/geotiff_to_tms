@@ -90,7 +90,12 @@ class landsat_scene_handles {
     GDALClose(r);
   }
 
- private:
+  bool operator!=(const landsat_scene_handles & other) const
+  {
+    return ((r != other.r) || (g != other.g) || (b != other.b) || (p != other.p));
+  }
+
+private:
   GDALDatasetH r;
   GDALDatasetH g;
   GDALDatasetH b;

@@ -37,42 +37,26 @@
 
 #include <arpa/inet.h>
 
-#include <boost/interprocess/managed_mapped_file.hpp>
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point.hpp>
-#include <boost/geometry/geometries/box.hpp>
-#include <boost/geometry/index/rtree.hpp>
-
 #include <lru/lru.hpp>
 
 #include "ansi.h"
-#include "lesser_landsat_scene.h"
 #include "greater_landsat_scene.h"
-#include "landsat_scene_handles.hpp"
+#include "lesser_landsat_scene.h"
 #include "load.h"
 #include "pngwrite.h"
 #include "projection.h"
 
-namespace bi  = boost::interprocess;
-namespace bg  = boost::geometry;
-namespace bgm = boost::geometry::model;
-namespace bgi = boost::geometry::index;
+#include "landsat_scene_handles.hpp"
+#include "rtree.hpp"
 
-// Resource: http://www.boost.org/doc/libs/1_63_0/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
-typedef bgm::point<double, 2, bg::cs::cartesian> point_t;
-typedef bgm::box<point_t> box_t;
-typedef std::pair<box_t, lesser_landsat_scene_struct> value_t;
-typedef bgi::linear<32,8> params_t;
-typedef bgi::indexable<value_t> indexable_t;
-typedef bgi::equal_to<value_t> equal_to_t;
-typedef bi::allocator<value_t, bi::managed_mapped_file::segment_manager> allocator_t;
-typedef bgi::rtree<value_t, params_t, indexable_t, equal_to_t, allocator_t> rtree_t;
+const char * indexfile = nullptr;
+const char * prefix = nullptr;
+rtree_t * rtree_ptr = nullptr;
+projPJ webmercator_pj = nullptr;
+bi::managed_mapped_file * file = nullptr;
+
 typedef LRU::Cache<const char *, landsat_scene_handles> cache;
-
-const char * indexfile = NULL;
-const char * prefix = NULL;
-rtree_t * rtree_ptr = NULL;
-projPJ webmercator_pj = NULL;
+cache * lru = nullptr;
 
 // #define OVERZOOM_FACTOR (2)
 // #define OVERZOOM (overzoom ? OVERZOOM_FACTOR : 1)
@@ -100,61 +84,55 @@ void preload(int verbose, void * extra)
   prefix = DEFAULT_PREFIX;
   webmercator_pj = pj_init_plus(WEBMERCATOR);
 
-  bi::managed_mapped_file file(bi::open_only, indexfile);
-  allocator_t alloc(file.get_segment_manager());
-  rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);
-
-  // /c1/L8/139/044/LC08_L1TP_139044_20170304_20170316_01_T1/LC08_L1TP_139044_20170304_20170316_01_T1_B%d.TIF
-  // /c1/L8/139/045/LC08_L1TP_139045_20170304_20170316_01_T1/LC08_L1TP_139045_20170304_20170316_01_T1_B%d.TIF
-  // /c1/L8/139/043/LC08_L1TP_139043_20170304_20170316_01_T1/LC08_L1TP_139043_20170304_20170316_01_T1_B%d.TIF
-
-  //   /* Open red band file */
-  //   sprintf(filename, s->lesser.filename, 4);
-  //   if ((dataset = GDALOpen(filename, GA_ReadOnly)) == NULL) {
-  //     fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem" ANSI_COLOR_RESET "\n");
-  //     exit(-1);
-  //   }
-
-  // }
+  file = new bi::managed_mapped_file(bi::open_only, indexfile);
+  rtree_ptr = file->find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), allocator_t(file->get_segment_manager()));
 }
 
 void load(int verbose, void * extra)
 {
+  lru = new cache(1<<16);
 }
 
-// void load_scene(landsat_scene * s, int verbose)
-// {
-//   char r_filename[FILENAME_LEN];
-//   char g_filename[FILENAME_LEN];
-//   char b_filename[FILENAME_LEN];
+void zxy(int fd, int z, int x, int y, int verbose, void * extra)
+{
+  std::vector<value_t> results;
 
-//   if (verbose)
-//     fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", s->lesser.filename);
+  {
+    double z2 = pow(2.0, z);
+    double xmin = (2*((x+0) / z2) - 1) * M_PI * RADIUS;
+    double xmax = (2*((x+1) / z2) - 1) * M_PI * RADIUS;
+    double ymin = (1 - 2*((y+0) / z2)) * M_PI * RADIUS;
+    double ymax = (1 - 2*((y+1) / z2)) * M_PI * RADIUS;
+    point_t smaller = point_t(std::min(xmin, xmax), std::min(ymin,ymax));
+    point_t larger = point_t(std::max(xmin, xmax), std::max(ymin,ymax));
+    box_t box = box_t(smaller, larger);
 
-//   sprintf(r_filename, s->lesser.filename, 4); // XXX needs prefix
-//   sprintf(g_filename, s->lesser.filename, 3); // XXX needs prefix
-//   sprintf(b_filename, s->lesser.filename, 2); // XXX needs prefix
+    rtree_ptr->query(bgi::intersects(box), std::back_inserter(results));
+  }
 
-//   /* Datasets and bands */
-//   s->r_dataset = GDALOpen(r_filename, GA_ReadOnly);
-//   if(s->r_dataset == NULL) {
-//     fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (red band band)" ANSI_COLOR_RESET "\n");
-//     exit(-1);
-//   }
-//   s->g_dataset = GDALOpen(g_filename, GA_ReadOnly);
-//   if(s->g_dataset == NULL) {
-//     fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (green band)" ANSI_COLOR_RESET "\n");
-//     exit(-1);
-//   }
-//   s->b_dataset = GDALOpen(b_filename, GA_ReadOnly);
-//   if(s->b_dataset == NULL) {
-//     fprintf(stderr, ANSI_COLOR_RED "GDALOpen problem (blue band)" ANSI_COLOR_RESET "\n");
-//     exit(-1);
-//   }
-//   s->r_band = GDALGetRasterBand(s->r_dataset, 1);
-//   s->g_band = GDALGetRasterBand(s->g_dataset, 1);
-//   s->b_band = GDALGetRasterBand(s->b_dataset, 1);
-// }
+  fprintf(stderr, "%ld %ld\n", rtree_ptr->size(), results.size());
+
+  // int exact = (z < 7) ? 1 : 0;
+  // int overzoom = (z < 3) ? 1 : 0;
+
+  // #pragma omp parallel for schedule(static, 1)
+  // for (int i = -1; i < scene_count; ++i) {
+  //   if (i == -1)
+  //     memset(tile, 0, sizeof(tile));
+  //   else if (exact)
+  //     zxy_exact_read(z, _x, _y, overzoom, scene + i, verbose);
+  //   else if (!exact)
+  //     zxy_approx_read(z, _x, _y, scene + i, verbose);
+  // }
+
+  // // Sample from textures to produce tile
+  // if (exact)
+  //   zxy_exact_commit(overzoom);
+  // else
+  //   zxy_approx_commit();
+
+  // write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
+}
 
 // int fetch(landsat_scene * s, int overzoom, int verbose)
 // {
@@ -217,30 +195,6 @@ void load(int verbose, void * extra)
 
 //   return 1;
 // }
-
-void zxy(int fd, int z, int _x, int _y, int verbose, void * extra)
-{
-  // int exact = (z < 7) ? 1 : 0;
-  // int overzoom = (z < 3) ? 1 : 0;
-
-  // #pragma omp parallel for schedule(static, 1)
-  // for (int i = -1; i < scene_count; ++i) {
-  //   if (i == -1)
-  //     memset(tile, 0, sizeof(tile));
-  //   else if (exact)
-  //     zxy_exact_read(z, _x, _y, overzoom, scene + i, verbose);
-  //   else if (!exact)
-  //     zxy_approx_read(z, _x, _y, scene + i, verbose);
-  // }
-
-  // // Sample from textures to produce tile
-  // if (exact)
-  //   zxy_exact_commit(overzoom);
-  // else
-  //   zxy_approx_commit();
-
-  // write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
-}
 
 // void zxy_exact_read(int z, int _x, int _y, int overzoom, landsat_scene * s, int verbose)
 // {

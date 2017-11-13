@@ -39,7 +39,7 @@ extern "C" {
 
   void preload(int verbose, void * extra);
   void load(int verbose, void * extra);
-  void zxy(int fd, int z, int _x, int _y, int verbose, void * extra);
+  void zxy(int fd, int z, int x, int y, int verbose, void * extra);
 
 #ifdef __cplusplus
 }
