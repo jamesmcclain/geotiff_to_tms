@@ -37,7 +37,7 @@
 
 #include <arpa/inet.h>
 
-#include <lru/lru.hpp>
+#include <boost/compute/detail/lru_cache.hpp>
 
 #include "ansi.h"
 #include "greater_landsat_scene.h"
@@ -49,13 +49,15 @@
 #include "landsat_scene_handles.hpp"
 #include "rtree.hpp"
 
+namespace bcd = boost::compute::detail;
+
+typedef bcd::lru_cache<const char *, landsat_scene_handles> cache;
+
 const char * indexfile = nullptr;
 const char * prefix = nullptr;
 rtree_t * rtree_ptr = nullptr;
 projPJ webmercator_pj = nullptr;
 bi::managed_mapped_file * file = nullptr;
-
-typedef LRU::Cache<const char *, landsat_scene_handles> cache;
 cache * lru = nullptr;
 
 // #define OVERZOOM_FACTOR (2)
@@ -86,11 +88,11 @@ void preload(int verbose, void * extra)
 
   file = new bi::managed_mapped_file(bi::open_only, indexfile);
   rtree_ptr = file->find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), allocator_t(file->get_segment_manager()));
+  lru = new cache(1<<16);
 }
 
 void load(int verbose, void * extra)
 {
-  lru = new cache(1<<16);
 }
 
 void zxy(int fd, int z, int x, int y, int verbose, void * extra)

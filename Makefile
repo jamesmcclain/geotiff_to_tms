@@ -1,4 +1,3 @@
-LRU_CFLAGS ?= -I../lru-cache/include
 BOOST_CFLAGS ?= -I${HOME}/local/src//boost_1_65_1
 BOOST_CXXFLAGS ?= -I${HOME}/local/src/boost_1_65_1
 GDAL_CFLAGS ?= $(shell gdal-config --cflags)
@@ -19,7 +18,7 @@ landsat-server: server.o landsat-server.o pngwrite.o fullio.o projection.o
 	$(CXX) $^ $(LDFLAGS) -fopenmp -o $@
 
 landsat-server.o: landsat-server.cpp load.h constants.h landsat_scene_handles.hpp greater_landsat_scene.h lesser_landsat_scene.h rtree.hpp
-	$(CXX) -fopenmp $(CXXFLAGS) -Wno-reorder $(GDAL_CFLAGS) $(LRU_CFLAGS) $(BOOST_CXXFLAGS) $< -c -o $@
+	$(CXX) -fopenmp $(CXXFLAGS) -Wno-reorder $(GDAL_CFLAGS) $(BOOST_CXXFLAGS) $< -c -o $@
 
 landsat-index.o: landsat-index.cpp lesser_landsat_scene.h rtree.hpp
 	$(CXX) -fopenmp $(CXXFLAGS) $(GDAL_CFLAGS) $(BOOST_CXXFLAGS) $< -c -o $@
