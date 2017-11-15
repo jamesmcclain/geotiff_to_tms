@@ -32,12 +32,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
-#include <cfloat>
 #include <cmath>
+#include <limits>
 
 #include <arpa/inet.h>
 
 #include <boost/compute/detail/lru_cache.hpp>
+#include <boost/geometry/algorithms/intersection.hpp>
+#include <boost/geometry/algorithms/intersects.hpp>
 
 #include "ansi.h"
 #include "greater_landsat_scene.h"
@@ -56,18 +58,14 @@ typedef bcd::lru_cache<const char *, landsat_scene_handles> cache;
 const char * indexfile = nullptr;
 const char * prefix = nullptr;
 rtree_t * rtree_ptr = nullptr;
-projPJ webmercator_pj = nullptr;
+projPJ webmercator = nullptr;
 bi::managed_mapped_file * file = nullptr;
 cache * lru = nullptr;
 
 // #define OVERZOOM_FACTOR (2)
 // #define OVERZOOM (overzoom ? OVERZOOM_FACTOR : 1)
 
-// const char * webmercator = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs";
-// projPJ webmercator_pj = NULL;
-// landsat_scene * scene = NULL;
-// int scene_count = -1;
-// uint8_t tile[TILE_SIZE2<<2]; // RGBA ergo 4
+uint8_t tile[TILE_SIZE*4]; // RGBA ergo 4
 
 // int fetch(landsat_scene * s, int overzoom, int verbose);
 // uint8_t sigmoidal(uint16_t _u);
@@ -75,7 +73,7 @@ cache * lru = nullptr;
 // void zxy_approx_commit();
 // void zxy_approx_read(int z, int _x, int _y, landsat_scene * s, int verbose);
 // void zxy_exact_commit(int overzoom);
-// void zxy_exact_read(int z, int _x, int _y, int overzoom, landsat_scene * s, int verbose);
+void zxy_exact_read(int z, int x, int y, const value_t & pair);
 
 
 void preload(int verbose, void * extra)
@@ -84,7 +82,7 @@ void preload(int verbose, void * extra)
 
   indexfile = DEFAULT_INDEXFILE;
   prefix = DEFAULT_PREFIX;
-  webmercator_pj = pj_init_plus(WEBMERCATOR);
+  webmercator = pj_init_plus(WEBMERCATOR);
 
   file = new bi::managed_mapped_file(bi::open_only, indexfile);
   rtree_ptr = file->find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), allocator_t(file->get_segment_manager()));
@@ -112,20 +110,18 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
     rtree_ptr->query(bgi::intersects(box), std::back_inserter(results));
   }
 
-  fprintf(stderr, "%ld %ld\n", rtree_ptr->size(), results.size());
-
-  // int exact = (z < 7) ? 1 : 0;
+  int exact = (z < 7) ? 1 : 0;
   // int overzoom = (z < 3) ? 1 : 0;
 
-  // #pragma omp parallel for schedule(static, 1)
-  // for (int i = -1; i < scene_count; ++i) {
-  //   if (i == -1)
-  //     memset(tile, 0, sizeof(tile));
-  //   else if (exact)
-  //     zxy_exact_read(z, _x, _y, overzoom, scene + i, verbose);
-  //   else if (!exact)
-  //     zxy_approx_read(z, _x, _y, scene + i, verbose);
-  // }
+  // #pragma omp parallel for schedule(dynamic, 1)
+  for (int i = -1; i < (int)results.size(); ++i) {
+    if (i == -1)
+      memset(tile, 0, sizeof(tile));
+    else /*if (exact)*/
+      zxy_exact_read(z, x, y, results[i]);
+    // else if (!exact)
+    //   zxy_approx_read(z, x, y, results[i], verbose);
+  }
 
   // // Sample from textures to produce tile
   // if (exact)
@@ -137,120 +133,139 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
 }
 
 // int fetch(landsat_scene * s, int overzoom, int verbose)
-// {
-//   int src_window_xmax, src_window_ymax;
+int fetch(const value_t & pair, const std::vector<double> & xs, const std::vector<double> & ys, const box_t & tile_bb)
+{
+  box_t image_bb = box_t(point_t(0, 0), point_t(pair.second.width-1, pair.second.height-1));
 
-//   // If the tile is disjoint from the source image, exit.
-//   if ((s->xmin >= s->src_width-1) ||
-//       (s->ymin >= s->src_height-1) ||
-//       (s->xmax <= 0) ||
-//       (s->ymax <= 0)) {
-//     return 0;
-//   }
+  if (!bg::intersects(tile_bb, image_bb)) {
+    return 0;
+  }
 
-//   // Clip window to source data
-//   if (s->xmin < 0) s->src_window_xmin = 0; else s->src_window_xmin = s->xmin;
-//   if (s->ymin < 0) s->src_window_ymin = 0; else s->src_window_ymin = s->ymin;
-//   if (s->xmax > s->src_width-1) src_window_xmax = s->src_width-1; else src_window_xmax = s->xmax;
-//   if (s->ymax > s->src_height-1) src_window_ymax = s->src_height-1; else src_window_ymax = s->ymax;
-//   s->src_window_width = src_window_xmax - s->src_window_xmin;
-//   s->src_window_height = src_window_ymax - s->src_window_ymin;
-//   s->tile_window_xmin = floor(TILE_SIZE*((s->src_window_xmin - s->xmin)/(s->xmax - s->xmin)));
-//   s->tile_window_ymin = floor(TILE_SIZE*((s->src_window_ymin - s->ymin)/(s->ymax - s->ymin)));
-//   s->tile_window_width = ceil(TILE_SIZE*((s->src_window_width)/(s->xmax - s->xmin)));
-//   s->tile_window_height = ceil(TILE_SIZE*((s->src_window_height)/(s->ymax - s->ymin)));
+  box_t result;
 
-//   if (verbose) {
-//     fprintf(stderr,
-//             ANSI_COLOR_CYAN "width=%d height=%d "
-//             ANSI_COLOR_MAGENTA "tx=%d ty=%d twidth=%d theight=%d "
-//             ANSI_COLOR_BLUE "pid=%d"
-//             ANSI_COLOR_RESET "\n",
-//             s->src_window_width, s->src_window_height,
-//             s->tile_window_xmin, s->tile_window_ymin,
-//             s->tile_window_width, s->tile_window_height,
-//             getpid());
-//   }
+  bg::intersection(tile_bb, image_bb, result);
+  // int src_window_xmax, src_window_ymax;
 
-//   // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
-//   if (GDALRasterIO(s->r_band, GF_Read,
-//                    s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
-//                    s->r_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
-//                    GDT_UInt16, 0, 0)) {
-//     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (red band)" ANSI_COLOR_RESET "\n");
-//     exit(-1);
-//   }
-//   if (GDALRasterIO(s->g_band, GF_Read,
-//                    s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
-//                    s->g_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
-//                    GDT_UInt16, 0, 0)) {
-//     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (green band)" ANSI_COLOR_RESET "\n");
-//     exit(-1);
-//   }
-//   if (GDALRasterIO(s->b_band, GF_Read,
-//                    s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
-//                    s->b_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
-//                    GDT_UInt16, 0, 0)) {
-//     fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (blue band)" ANSI_COLOR_RESET "\n");
-//     exit(-1);
-//   }
+  // // If the tile is disjoint from the source image, exit.
+  // if ((s->xmin >= s->src_width-1) ||
+  //     (s->ymin >= s->src_height-1) ||
+  //     (s->xmax <= 0) ||
+  //     (s->ymax <= 0)) {
+  //   return 0;
+  // }
 
-//   return 1;
-// }
+  // // Clip window to source data
+  // if (s->xmin < 0) s->src_window_xmin = 0; else s->src_window_xmin = s->xmin;
+  // if (s->ymin < 0) s->src_window_ymin = 0; else s->src_window_ymin = s->ymin;
+  // if (s->xmax > s->src_width-1) src_window_xmax = s->src_width-1; else src_window_xmax = s->xmax;
+  // if (s->ymax > s->src_height-1) src_window_ymax = s->src_height-1; else src_window_ymax = s->ymax;
+  // s->src_window_width = src_window_xmax - s->src_window_xmin;
+  // s->src_window_height = src_window_ymax - s->src_window_ymin;
+  // s->tile_window_xmin = floor(TILE_SIZE*((s->src_window_xmin - s->xmin)/(s->xmax - s->xmin)));
+  // s->tile_window_ymin = floor(TILE_SIZE*((s->src_window_ymin - s->ymin)/(s->ymax - s->ymin)));
+  // s->tile_window_width = ceil(TILE_SIZE*((s->src_window_width)/(s->xmax - s->xmin)));
+  // s->tile_window_height = ceil(TILE_SIZE*((s->src_window_height)/(s->ymax - s->ymin)));
 
-// void zxy_exact_read(int z, int _x, int _y, int overzoom, landsat_scene * s, int verbose)
-// {
-//   double * patch = s->coordinates.patch;
-//   double xmin = DBL_MAX, ymin = DBL_MAX;
-//   double xmax = DBL_MIN, ymax = DBL_MIN;
+  // if (verbose) {
+  //   fprintf(stderr,
+  //           ANSI_COLOR_CYAN "width=%d height=%d "
+  //           ANSI_COLOR_MAGENTA "tx=%d ty=%d twidth=%d theight=%d "
+  //           ANSI_COLOR_BLUE "pid=%d"
+  //           ANSI_COLOR_RESET "\n",
+  //           s->src_window_width, s->src_window_height,
+  //           s->tile_window_xmin, s->tile_window_ymin,
+  //           s->tile_window_width, s->tile_window_height,
+  //           getpid());
+  // }
 
-//   if (verbose) {
-//     fprintf(stderr,
-//             ANSI_COLOR_YELLOW "z=%d x=%d y=%d pid=%d" ANSI_COLOR_RESET "\n",
-//             z, _x, _y, getpid());
-//   }
+  // // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
+  // if (GDALRasterIO(s->r_band, GF_Read,
+  //                  s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
+  //                  s->r_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
+  //                  GDT_UInt16, 0, 0)) {
+  //   fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (red band)" ANSI_COLOR_RESET "\n");
+  //   exit(-1);
+  // }
+  // if (GDALRasterIO(s->g_band, GF_Read,
+  //                  s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
+  //                  s->g_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
+  //                  GDT_UInt16, 0, 0)) {
+  //   fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (green band)" ANSI_COLOR_RESET "\n");
+  //   exit(-1);
+  // }
+  // if (GDALRasterIO(s->b_band, GF_Read,
+  //                  s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
+  //                  s->b_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
+  //                  GDT_UInt16, 0, 0)) {
+  //   fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (blue band)" ANSI_COLOR_RESET "\n");
+  //   exit(-1);
+  // }
 
-//   /*
-//     TMS to Pseudo Web Mercator
-//     Source: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
-//   */
-//   for (int j = 0; j < TILE_SIZE; ++j) {
-//     for (int i = 0; i < TILE_SIZE; ++i) {
-//       int index = (i + j*TILE_SIZE)<<1;
-//       patch[index+0] = _x + (i/((double)(TILE_SIZE+1)));       // tile space
-//       patch[index+0] /= pow(2.0, z);                           // 0-1 scaled, translated Web Mercator
-//       patch[index+0] = (2*patch[index+0] - 1) * M_PI * RADIUS; // Web Mercator
-//       patch[index+1] = _y + (j/((double)(TILE_SIZE+1)));
-//       patch[index+1] /= pow(2.0, z);
-//       patch[index+1] = (1 - 2*patch[index+1]) * M_PI * RADIUS;
-//     }
-//   }
+  // return 1;
+}
 
-//   /* Web Mercator to world coordinates */
-//   pj_transform(webmercator_pj, s->lesser.projection,
-//                TILE_SIZE*TILE_SIZE, 2,
-//                patch, patch+1, NULL);
+void zxy_exact_read(int z, int x, int y, const value_t & pair)
+{
+  double xmin = std::numeric_limits<double>::max();
+  double ymin = std::numeric_limits<double>::max();
+  double xmax = std::numeric_limits<double>::min();
+  double ymax = std::numeric_limits<double>::min();
+  auto xs = std::vector<double>(TILE_SIZE * TILE_SIZE);
+  auto ys = std::vector<double>(TILE_SIZE * TILE_SIZE);
 
-//   /* World coordinates to image coordinates */
-//   for (int j = 0; j < TILE_SIZE; ++j) {
-//     for (int i = 0; i < TILE_SIZE; ++i) {
-//       int index = (i + j*TILE_SIZE)<<1;
-//       world_to_image(patch+index, s->lesser.transform);
-//       xmin = fmin(patch[index+0], xmin);
-//       xmax = fmax(patch[index+0], xmax);
-//       ymin = fmin(patch[index+1], ymin);
-//       ymax = fmax(patch[index+1], ymax);
-//     }
-//   }
+  /*
+    TMS to Pseudo Web Mercator
+    Source: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
+    Source: https://software.intel.com/en-us/node/524530
+  */
+  {
+    double z2 = pow(2.0, z);
 
-//   /* Bounding box of the tile */
-//   s->xmin = round(xmin);
-//   s->xmax = round(xmax);
-//   s->ymin = round(ymin);
-//   s->ymax = round(ymax);
+    // #pragma omp simd collapse(2)
+    for (int j = 0; j < TILE_SIZE; ++j) {
+      for ( int i = 0; i < TILE_SIZE; ++i) {
+        int index = (i + j*TILE_SIZE);
+        double u, v;
 
-//   s->dirty = fetch(s, overzoom, verbose);
-// }
+        u = x + (i/((double)(TILE_SIZE+1))); // tile space
+        u /= z2;                             // 0-1 scaled, translated Web Mercator
+        u = (2*u - 1) * M_PI * RADIUS;       // Web Mercator
+        xs[index] = u;
+
+        v = y + (j/((double)(TILE_SIZE+1))); // tile space
+        v /= z2;                             // 0-1 scaled, translated Web Mercator
+        v = (1 - 2*v) * M_PI * RADIUS;       // Web Mercator
+        ys[index] = v;
+      }
+    }
+  }
+
+  /* Web Mercator to world coordinates */
+  projPJ projection = pj_init_plus(pair.second.proj4);
+  pj_transform(webmercator, projection, TILE_SIZE*TILE_SIZE, 1, &xs[0], &ys[0], NULL);
+  pj_free(projection);
+
+  /* World coordinates to image coordinates */
+  for (int j = 0; j < TILE_SIZE; ++j) {
+    for (int i = 0; i < TILE_SIZE; ++i) {
+      int index = (i + j*TILE_SIZE);
+      double uv[2] = {xs[index], ys[index]};
+
+      world_to_image(uv, pair.second.transform);
+      xmin = fmin(uv[0], xmin);
+      xmax = fmax(uv[0], xmax);
+      ymin = fmin(uv[1], ymin);
+      ymax = fmax(uv[1], ymax);
+    }
+  }
+
+  /* Bounding box of the tile in image coordinates */
+  box_t bounding_box = box_t(point_t(round(xmin), round(ymin)),
+                             point_t(round(xmax), round(ymax)));
+
+  fetch(pair, xs, ys, bounding_box);
+  // s->dirty = fetch(s, overzoom, verbose);
+}
 
 // void zxy_approx_commit()
 // {
