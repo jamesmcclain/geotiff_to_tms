@@ -62,13 +62,19 @@ projPJ webmercator = nullptr;
 bi::managed_mapped_file * file = nullptr;
 cache * lru = nullptr;
 
+#define MAX_LEN (1<<10)
+#define XMIN(b) ((b).min_corner().get<0>())
+#define YMIN(b) ((b).min_corner().get<1>())
+#define XMAX(b) ((b).max_corner().get<0>())
+#define YMAX(b) ((b).max_corner().get<1>())
+
 // #define OVERZOOM_FACTOR (2)
 // #define OVERZOOM (overzoom ? OVERZOOM_FACTOR : 1)
 
 uint8_t tile[TILE_SIZE*4]; // RGBA ergo 4
 
-// int fetch(landsat_scene * s, int overzoom, int verbose);
-// uint8_t sigmoidal(uint16_t _u);
+int fetch(const value_t & pair, const box_t & tile_bb, uint16_t * textures[3], ibox_t & texture_box);
+uint8_t sigmoidal(uint16_t _u);
 // void load_scene(landsat_scene * s, int verbose);
 // void zxy_approx_commit();
 // void zxy_approx_read(int z, int _x, int _y, landsat_scene * s, int verbose);
@@ -132,76 +138,57 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   // write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
-// int fetch(landsat_scene * s, int overzoom, int verbose)
-int fetch(const value_t & pair, const std::vector<double> & xs, const std::vector<double> & ys, const box_t & tile_bb)
+int fetch(const value_t & pair,
+          const box_t & tile_bb,
+          uint16_t * textures[3],
+          ibox_t & texture_box)
 {
+  GDALDatasetH handles[3];
+  GDALRasterBandH bands[3];
+  char pattern[MAX_LEN];
+  char filename[MAX_LEN];
+
   box_t image_bb = box_t(point_t(0, 0), point_t(pair.second.width-1, pair.second.height-1));
 
-  if (!bg::intersects(tile_bb, image_bb)) {
+  // If no intersection, short circuit
+  if (!bg::intersects(tile_bb, image_bb))
     return 0;
+
+  // Compute image box
+  box_t image_box;
+  bg::intersection(tile_bb, image_bb, image_box);
+
+  // Compute texture box
+  double xscale = TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb));
+  double yscale = TILE_SIZE / (YMAX(tile_bb) - YMIN(tile_bb));
+  texture_box.min_corner().set<0>(static_cast<int>(floor(xscale*(XMIN(image_box)-XMIN(tile_bb)))));
+  texture_box.min_corner().set<1>(static_cast<int>(floor(yscale*(YMIN(image_box)-YMIN(tile_bb)))));
+  texture_box.max_corner().set<0>(static_cast<int>(ceil(xscale*(XMAX(image_box)-XMIN(tile_bb)))));
+  texture_box.max_corner().set<1>(static_cast<int>(ceil(yscale*(YMAX(image_box)-YMIN(tile_bb)))));
+
+  // Open reg, green, blue datasets
+  sprintf(pattern, "%s%s", DEFAULT_PREFIX, pair.second.filename);
+  for (int i = 4; i > 1; --i) {
+    sprintf(filename, pattern, i);
+    if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) exit(-1); // XXX
+    bands[4-i] = GDALGetRasterBand(handles[4-i], 1);
   }
 
-  box_t result;
+  // Fetch textures
+  // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
+  for (int i = 0; i < 3; ++i) {
+    if (GDALRasterIO(bands[i],
+                     GF_Read,
+                     static_cast<int>(floor(XMIN(image_box))),
+                     static_cast<int>(floor(YMIN(image_box))),
+                     static_cast<int>(ceil(XMAX(image_box)-XMIN(image_box))),
+                     static_cast<int>(ceil(YMAX(image_box)-YMIN(image_box))),
+                     textures[i],
+                     XMAX(texture_box)-XMIN(texture_box), YMAX(texture_box)-YMIN(texture_box),
+                     GDT_UInt16, 0, 0)) exit(-1);
+  }
 
-  bg::intersection(tile_bb, image_bb, result);
-  // int src_window_xmax, src_window_ymax;
-
-  // // If the tile is disjoint from the source image, exit.
-  // if ((s->xmin >= s->src_width-1) ||
-  //     (s->ymin >= s->src_height-1) ||
-  //     (s->xmax <= 0) ||
-  //     (s->ymax <= 0)) {
-  //   return 0;
-  // }
-
-  // // Clip window to source data
-  // if (s->xmin < 0) s->src_window_xmin = 0; else s->src_window_xmin = s->xmin;
-  // if (s->ymin < 0) s->src_window_ymin = 0; else s->src_window_ymin = s->ymin;
-  // if (s->xmax > s->src_width-1) src_window_xmax = s->src_width-1; else src_window_xmax = s->xmax;
-  // if (s->ymax > s->src_height-1) src_window_ymax = s->src_height-1; else src_window_ymax = s->ymax;
-  // s->src_window_width = src_window_xmax - s->src_window_xmin;
-  // s->src_window_height = src_window_ymax - s->src_window_ymin;
-  // s->tile_window_xmin = floor(TILE_SIZE*((s->src_window_xmin - s->xmin)/(s->xmax - s->xmin)));
-  // s->tile_window_ymin = floor(TILE_SIZE*((s->src_window_ymin - s->ymin)/(s->ymax - s->ymin)));
-  // s->tile_window_width = ceil(TILE_SIZE*((s->src_window_width)/(s->xmax - s->xmin)));
-  // s->tile_window_height = ceil(TILE_SIZE*((s->src_window_height)/(s->ymax - s->ymin)));
-
-  // if (verbose) {
-  //   fprintf(stderr,
-  //           ANSI_COLOR_CYAN "width=%d height=%d "
-  //           ANSI_COLOR_MAGENTA "tx=%d ty=%d twidth=%d theight=%d "
-  //           ANSI_COLOR_BLUE "pid=%d"
-  //           ANSI_COLOR_RESET "\n",
-  //           s->src_window_width, s->src_window_height,
-  //           s->tile_window_xmin, s->tile_window_ymin,
-  //           s->tile_window_width, s->tile_window_height,
-  //           getpid());
-  // }
-
-  // // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
-  // if (GDALRasterIO(s->r_band, GF_Read,
-  //                  s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
-  //                  s->r_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
-  //                  GDT_UInt16, 0, 0)) {
-  //   fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (red band)" ANSI_COLOR_RESET "\n");
-  //   exit(-1);
-  // }
-  // if (GDALRasterIO(s->g_band, GF_Read,
-  //                  s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
-  //                  s->g_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
-  //                  GDT_UInt16, 0, 0)) {
-  //   fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (green band)" ANSI_COLOR_RESET "\n");
-  //   exit(-1);
-  // }
-  // if (GDALRasterIO(s->b_band, GF_Read,
-  //                  s->src_window_xmin, s->src_window_ymin, s->src_window_width, s->src_window_height,
-  //                  s->b_texture, OVERZOOM * s->tile_window_width, OVERZOOM * s->tile_window_height,
-  //                  GDT_UInt16, 0, 0)) {
-  //   fprintf(stderr, ANSI_COLOR_RED "GDALRasterIO problem (blue band)" ANSI_COLOR_RESET "\n");
-  //   exit(-1);
-  // }
-
-  // return 1;
+  return 1;
 }
 
 void zxy_exact_read(int z, int x, int y, const value_t & pair)
@@ -263,7 +250,14 @@ void zxy_exact_read(int z, int x, int y, const value_t & pair)
   box_t bounding_box = box_t(point_t(round(xmin), round(ymin)),
                              point_t(round(xmax), round(ymax)));
 
-  fetch(pair, xs, ys, bounding_box);
+  /* Textures and texture bounding box (the latter in tile coordinates) */
+  ibox_t texture_box;
+  uint16_t * textures[3];
+  for (int i = 0; i < 3; ++i)
+    textures[i] = static_cast<uint16_t *>(calloc(TILE_SIZE * TILE_SIZE, sizeof(uint16_t)));
+
+  fetch(pair, bounding_box, textures, texture_box);
+  fprintf(stderr, "XXX\n");
   // s->dirty = fetch(s, overzoom, verbose);
 }
 

@@ -22,4 +22,7 @@ typedef bgi::equal_to<value_t> equal_to_t;
 typedef bi::allocator<value_t, bi::managed_mapped_file::segment_manager> allocator_t;
 typedef bgi::rtree<value_t, params_t, indexable_t, equal_to_t, allocator_t> rtree_t;
 
+typedef bgm::point<int, 2, bg::cs::cartesian> ipoint_t;
+typedef bgm::box<ipoint_t> ibox_t;
+
 #endif

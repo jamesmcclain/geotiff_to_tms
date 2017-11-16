@@ -45,9 +45,8 @@
 
 #include "rtree.hpp"
 
-#define MAX_LEN (1<<10)
 #define INCREMENTS (1<<8)
-#define PREFIX "https://s3-us-west-2.amazonaws.com/landsat-pds/"
+#define PREFIX "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
 #define POSTFIX "index.html"
 
 const char * webmercator = WEBMERCATOR;
