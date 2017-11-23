@@ -81,10 +81,10 @@ void bounding_box(std::pair<box_t, lesser_landsat_scene_struct> & pair)
 
   // Get WebMercator coordinates
   projection_pj = pj_init_plus(pair.second.proj4);
-  pj_transform(webmercator_pj, projection_pj, INCREMENTS, 2, t+0, t+1, NULL);
-  pj_transform(webmercator_pj, projection_pj, INCREMENTS, 2, b+0, b+1, NULL);
-  pj_transform(webmercator_pj, projection_pj, INCREMENTS, 2, l+0, l+1, NULL);
-  pj_transform(webmercator_pj, projection_pj, INCREMENTS, 2, r+0, r+1, NULL);
+  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 2, t+0, t+1, NULL);
+  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 2, b+0, b+1, NULL);
+  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 2, l+0, l+1, NULL);
+  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 2, r+0, r+1, NULL);
   pj_free(projection_pj);
 
   // Get WebMercator bounding box
@@ -113,13 +113,13 @@ void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int v
   // Open the red band of the scene
   sprintf(pattern, "%s%s", prefix, s.filename);
   sprintf(filename, pattern, 4); // 4 stands for red
-  if ((dataset = GDALOpen(filename, GA_ReadOnly)) == NULL) exit(-1); // XXX
   if (verbose) fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", filename);
+  if ((dataset = GDALOpen(filename, GA_ReadOnly)) == NULL) exit(-1); // XXX
 
   // Get projection
   srs = OSRNewSpatialReference(NULL);
-  // This is never freed, but freeing wkt is not valid either.  The
-  // problem seems to originate from within GDAL.
+  // This is never freed, but freeing it after OSRImportFromWkt is not
+  // valid either.  The problem seems to originate from within GDAL.
   wkt = static_cast<char *>(CPLMalloc(MAX_LEN * sizeof(char)));
   strncpy(wkt, GDALGetProjectionRef(dataset), MAX_LEN);
   OSRImportFromWkt(srs, &wkt);
@@ -145,7 +145,7 @@ int main(int argc, const char ** argv)
   char buffer[MAX_LEN];
   char product_id[MAX_LEN];
   char infix[MAX_LEN];
-  const char * prefix = DEFAULT_PREFIX;
+  const char * prefix = DEFAULT_PREFIX_1;
   const char * indexfile = DEFAULT_INDEXFILE;
   int order_of_magnitude = 28;
 
@@ -164,7 +164,7 @@ int main(int argc, const char ** argv)
   // Read the scene list
   while (fgets(buffer, MAX_LEN, stdin) != NULL) {
     sscanf(buffer, "%[^,]", product_id);
-    sscanf(strstr(buffer, PREFIX), PREFIX "%s", infix);
+    sscanf(strstr(buffer, prefix) + strlen(prefix), "%s", infix);
     *(strstr(infix, POSTFIX)) = '\0';
     scene_list.push_back(std::make_pair(box_t(point_t(0, 0), point_t(1, 1)), lesser_landsat_scene_struct()));
     sprintf(scene_list.back().second.filename, "%s%s_B%%d.TIF", infix, product_id);
