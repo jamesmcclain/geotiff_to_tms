@@ -69,7 +69,7 @@ cache * lru = nullptr;
 #define XMAX(b) ((b).max_corner().get<0>())
 #define YMAX(b) ((b).max_corner().get<1>())
 
-uint8_t tile[TILE_SIZE*4]; // RGBA ergo 4
+uint8_t tile[TILE_SIZE2*4]; // RGBA ergo 4
 
 void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data);
 int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data);
@@ -97,7 +97,7 @@ void load(int verbose, void * extra)
 void zxy(int fd, int z, int x, int y, int verbose, void * extra)
 {
   std::vector<value_t> results;
-  std::vector<texture_data> data;
+  std::vector<texture_data> all_data;
 
   {
     double z2 = pow(2.0, z);
@@ -112,18 +112,28 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
     rtree_ptr->query(bgi::intersects(box), std::back_inserter(results));
   }
 
-  data.resize(results.size());
+  all_data.resize(results.size());
 
-  #pragma omp parallel for schedule(dynamic, 1)
+  for (unsigned int i = 0; i < all_data.size(); ++i) { // XXX
+    for (int j = 0; j < 3; ++j)
+      all_data[i].textures[j] = static_cast<uint16_t *>(calloc(TILE_SIZE * TILE_SIZE, sizeof(uint16_t)));
+  }
+
+  // #pragma omp parallel for schedule(dynamic, 1)
   for (int i = -1; i < (int)results.size(); ++i) {
     if (i == -1)
       memset(tile, 0, sizeof(tile));
     else
-      zxy_read(z, x, y, results[i], data[i]);
+      zxy_read(z, x, y, results[i], all_data[i]);
   }
 
-  // zxy_commit(data);
+  zxy_commit(all_data);
   write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
+
+  for (unsigned int i = 0; i < all_data.size(); ++i) { // XXX
+    for (int j = 0; j < 3; ++j)
+      free(all_data[i].textures[j]);
+  }
 }
 
 int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
@@ -139,39 +149,43 @@ int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
   if (!bg::intersects(tile_bb, image_bb))
     return 0;
 
-  // Compute image box (the intersection of the tile bounding box with
-  // the image bounding box.
-  box_t image_box;
-  bg::intersection(tile_bb, image_bb, image_box);
+  // Compute location of the tile within the scene (the intersection
+  // of the tile bounding box with the image bounding box).
+  bg::intersection(tile_bb, image_bb, data.location_in_scene);
 
-  // Compute texture box
-  double xscale = TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb));
-  double yscale = TILE_SIZE / (YMAX(tile_bb) - YMIN(tile_bb));
-  data.location_in_tile.min_corner().set<0>(static_cast<int>(floor(xscale*(XMIN(image_box)-XMIN(tile_bb)))));
-  data.location_in_tile.min_corner().set<1>(static_cast<int>(floor(yscale*(YMIN(image_box)-YMIN(tile_bb)))));
-  data.location_in_tile.max_corner().set<0>(static_cast<int>(ceil(xscale*(XMAX(image_box)-XMIN(tile_bb)))));
-  data.location_in_tile.max_corner().set<1>(static_cast<int>(ceil(yscale*(YMAX(image_box)-YMIN(tile_bb)))));
+  // // Compute texture box
+  // double xscale = TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb));
+  // double yscale = TILE_SIZE / (YMAX(tile_bb) - YMIN(tile_bb));
+  // data.location_in_tile.min_corner().set<0>(static_cast<int>(floor(xscale*(XMIN(data.location_in_scene)-XMIN(tile_bb)))));
+  // data.location_in_tile.min_corner().set<1>(static_cast<int>(floor(yscale*(YMIN(data.location_in_scene)-YMIN(tile_bb)))));
+  // data.location_in_tile.max_corner().set<0>(static_cast<int>(ceil(xscale*(XMAX(data.location_in_scene)-XMIN(tile_bb)))));
+  // data.location_in_tile.max_corner().set<1>(static_cast<int>(ceil(yscale*(YMAX(data.location_in_scene)-YMIN(tile_bb)))));
 
-  // Open reg, green, blue datasets
+  // Open red, green, blue datasets
   sprintf(pattern, "%s%s", DEFAULT_PREFIX_2, pair.second.filename);
   for (int i = 4; i > 1; --i) {
     sprintf(filename, pattern, i);
-    if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) exit(-1); // XXX
+    if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) {
+      fprintf(stderr, ANSI_COLOR_RED "Could not open %s" ANSI_COLOR_RESET "\n", filename);
+      exit(-1);
+    }
     bands[4-i] = GDALGetRasterBand(handles[4-i], 1);
   }
 
-  data.texture_width  = std::max(64, XMAX(data.location_in_tile)-XMIN(data.location_in_tile));
-  data.texture_height = std::max(64, YMAX(data.location_in_tile)-YMIN(data.location_in_tile));
+  data.texture_width  = 64; //std::max(64, XMAX(data.location_in_tile)-XMIN(data.location_in_tile));
+  data.texture_height = 64; //std::max(64, YMAX(data.location_in_tile)-YMIN(data.location_in_tile));
+  data.xscale = (double)data.texture_width / pair.second.width;
+  data.yscale = (double)data.texture_height / pair.second.height;
 
   // Fetch textures
   // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
   for (int i = 0; i < 3; ++i) {
     if (GDALRasterIO(bands[i],
                      GF_Read,
-                     static_cast<int>(floor(XMIN(image_box))),
-                     static_cast<int>(floor(YMIN(image_box))),
-                     static_cast<int>(ceil(XMAX(image_box)-XMIN(image_box))),
-                     static_cast<int>(ceil(YMAX(image_box)-YMIN(image_box))),
+                     static_cast<int>(floor(XMIN(data.location_in_scene))),
+                     static_cast<int>(floor(YMIN(data.location_in_scene))),
+                     static_cast<int>(ceil(XMAX(data.location_in_scene)-XMIN(data.location_in_scene))),
+                     static_cast<int>(ceil(YMAX(data.location_in_scene)-YMIN(data.location_in_scene))),
                      data.textures[i],
                      data.texture_width, data.texture_height,
                      GDT_UInt16, 0, 0)) exit(-1);
@@ -228,7 +242,9 @@ void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
       int index = (i + j*TILE_SIZE);
       double uv[2] = {data.xs[index], data.ys[index]};
 
-      world_to_image(uv, pair.second.transform);
+      world_to_image(uv, pair.second.transform); // XXX
+      data.xs[index] = uv[0];
+      data.ys[index] = uv[1];
       xmin = fmin(uv[0], xmin);
       xmax = fmax(uv[0], xmax);
       ymin = fmin(uv[1], ymin);
@@ -239,49 +255,54 @@ void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
   /* Bounding box of the tile in image coordinates */
   box_t tile_bounding_box = box_t(point_t(round(xmin), round(ymin)), point_t(round(xmax), round(ymax)));
 
-  /* Textures and texture bounding box (the latter in tile coordinates) */
-  for (int i = 0; i < 3; ++i)
-    data.textures[i] = static_cast<uint16_t *>(calloc(TILE_SIZE * TILE_SIZE, sizeof(uint16_t)));
-
   fetch(pair, tile_bounding_box, data);
 }
 
-// void zxy_commit(int overzoom)
-// {
-//   for (int i = 0; i < scene_count; ++i) {
-//     landsat_scene * s = scene + i;
+void zxy_commit(const std::vector<texture_data> & all_data)
+{
+  for (unsigned int k = 0; k < all_data.size(); ++k) {
+    const auto data = all_data[k];
 
-//     if (!s->dirty) continue;
+    // #pragma omp simd collapse(2)
+    for (int j = 0; j <= TILE_SIZE; ++j) { // tile coordinate
+      for (int i = 0; i <= TILE_SIZE; ++i) { // tile coordinate
+        int tile_index = (i + j*TILE_SIZE)*4;
+        double x = data.xs[tile_index/4], y = data.ys[tile_index/4]; // scene image coordinates
+        int u = static_cast<int>(round(data.xscale*(x-XMIN(data.location_in_scene)))); // texture coordinate
+        int v = static_cast<int>(round(data.yscale*(y-YMIN(data.location_in_scene)))); // texture coordinate
 
-//     const double * patch = s->coordinates.patch;
+        if (0 <= u && u < (int)data.texture_width &&
+            0 <= v && v < (int)data.texture_height) {
+          int texture_index = u + v*(data.texture_width);
+          uint8_t red, byte = 0;
 
-//     for (unsigned int j = 0; j < TILE_SIZE; ++j) {
-//       for (unsigned int i = 0; i < TILE_SIZE; ++i) {
-//         int patch_index = (i + j*TILE_SIZE)<<1;
-//         int tile_index = patch_index<<1;
-//         double u = patch[patch_index + 0];
-//         double v = patch[patch_index + 1];
+          byte |= red = sigmoidal(data.textures[0][texture_index]);
+          if (tile[tile_index + 3] == 0 /* alpha channel */ ||
+              tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
+            tile[tile_index + 0] = red;
+            byte |= tile[tile_index + 1] = sigmoidal(data.textures[1][texture_index]);
+            byte |= tile[tile_index + 2] = sigmoidal(data.textures[2][texture_index]);
+            tile[tile_index + 3] = (byte ? -1 : 0);
+          }
+        }
 
-//         u = round((((u - s->xmin)/(s->xmax - s->xmin)) * (OVERZOOM*TILE_SIZE - 1))) - OVERZOOM*s->tile_window_xmin;
-//         v = round((((v - s->ymin)/(s->ymax - s->ymin)) * (OVERZOOM*TILE_SIZE - 1))) - OVERZOOM*s->tile_window_ymin;
+        // // if ((0 <= u && u < OVERZOOM*s->tile_window_width) &&
+        // //     (0 <= v && v < OVERZOOM*s->tile_window_height)) {
+        // //   uint8_t red, byte = 0;
+        // //   int texture_index = (u + v*OVERZOOM*s->tile_window_width);
 
-//         if ((0 <= u && u < OVERZOOM*s->tile_window_width) &&
-//             (0 <= v && v < OVERZOOM*s->tile_window_height)) {
-//           uint8_t red, byte = 0;
-//           int texture_index = (u + v*OVERZOOM*s->tile_window_width);
-
-//           byte |= red = sigmoidal(s->r_texture[texture_index]);
-//           if (tile[tile_index + 3] == 0 || tile[tile_index + 0] < red) { // write into empty pixels
-//             tile[tile_index + 0] = red;
-//             byte |= tile[tile_index + 1] = sigmoidal(s->g_texture[texture_index]);
-//             byte |= tile[tile_index + 2] = sigmoidal(s->b_texture[texture_index]);
-//             tile[tile_index + 3] = (byte ? -1 : 0);
-//           }
-//         }
-//       }
-//     }
-//   }
-// }
+        // //   byte |= red = sigmoidal(s->r_texture[texture_index]);
+        // //   if (tile[tile_index + 3] == 0 || tile[tile_index + 0] < red) { // write into empty pixels
+        // //     tile[tile_index + 0] = red;
+        // //     byte |= tile[tile_index + 1] = sigmoidal(s->g_texture[texture_index]);
+        // //     byte |= tile[tile_index + 2] = sigmoidal(s->b_texture[texture_index]);
+        // //     tile[tile_index + 3] = (byte ? -1 : 0);
+        // //   }
+        // // }
+      }
+    }
+  }
+}
 
 uint8_t sigmoidal(uint16_t _u)
 {

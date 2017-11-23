@@ -39,10 +39,12 @@
 
 
 struct texture_data {
-  ibox_t location_in_tile;
+  // ibox_t location_in_tile;
+  box_t location_in_scene;
   std::vector<double> xs, ys;
   uint16_t * textures[3] = {nullptr, nullptr, nullptr};
   uint32_t texture_width = 0, texture_height = 0;
+  double xscale, yscale;
 };
 
 #endif
