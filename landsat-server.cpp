@@ -97,26 +97,22 @@ void load(int verbose, void * extra)
 void zxy(int fd, int z, int x, int y, int verbose, void * extra)
 {
   std::vector<value_t> results;
-  std::vector<texture_data> all_data;
+  std::vector<texture_data> texture_list;
+  double z2 = pow(2.0, z);
+  double xmin = (2*((x+0) / z2) - 1) * M_PI * RADIUS;
+  double xmax = (2*((x+1) / z2) - 1) * M_PI * RADIUS;
+  double ymin = (1 - 2*((y+0) / z2)) * M_PI * RADIUS;
+  double ymax = (1 - 2*((y+1) / z2)) * M_PI * RADIUS;
+  point_t smaller = point_t(std::min(xmin, xmax), std::min(ymin,ymax));
+  point_t larger = point_t(std::max(xmin, xmax), std::max(ymin,ymax));
+  box_t box = box_t(smaller, larger);
 
-  {
-    double z2 = pow(2.0, z);
-    double xmin = (2*((x+0) / z2) - 1) * M_PI * RADIUS;
-    double xmax = (2*((x+1) / z2) - 1) * M_PI * RADIUS;
-    double ymin = (1 - 2*((y+0) / z2)) * M_PI * RADIUS;
-    double ymax = (1 - 2*((y+1) / z2)) * M_PI * RADIUS;
-    point_t smaller = point_t(std::min(xmin, xmax), std::min(ymin,ymax));
-    point_t larger = point_t(std::max(xmin, xmax), std::max(ymin,ymax));
-    box_t box = box_t(smaller, larger);
+  rtree_ptr->query(bgi::intersects(box), std::back_inserter(results));
+  texture_list.resize(results.size());
 
-    rtree_ptr->query(bgi::intersects(box), std::back_inserter(results));
-  }
-
-  all_data.resize(results.size());
-
-  for (unsigned int i = 0; i < all_data.size(); ++i) { // XXX
+  for (unsigned int i = 0; i < texture_list.size(); ++i) { // XXX
     for (int j = 0; j < 3; ++j)
-      all_data[i].textures[j] = static_cast<uint16_t *>(calloc(TILE_SIZE * TILE_SIZE, sizeof(uint16_t)));
+      texture_list[i].textures[j] = static_cast<uint16_t *>(calloc(TILE_SIZE * TILE_SIZE, sizeof(uint16_t)));
   }
 
   // #pragma omp parallel for schedule(dynamic, 1)
@@ -124,15 +120,15 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
     if (i == -1)
       memset(tile, 0, sizeof(tile));
     else
-      zxy_read(z, x, y, results[i], all_data[i]);
+      zxy_read(z, x, y, results[i], texture_list[i]);
   }
 
-  zxy_commit(all_data);
+  zxy_commit(texture_list);
   write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 
-  for (unsigned int i = 0; i < all_data.size(); ++i) { // XXX
+  for (unsigned int i = 0; i < texture_list.size(); ++i) { // XXX
     for (int j = 0; j < 3; ++j)
-      free(all_data[i].textures[j]);
+      free(texture_list[i].textures[j]);
   }
 }
 
@@ -153,14 +149,6 @@ int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
   // of the tile bounding box with the image bounding box).
   bg::intersection(tile_bb, image_bb, data.location_in_scene);
 
-  // // Compute texture box
-  // double xscale = TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb));
-  // double yscale = TILE_SIZE / (YMAX(tile_bb) - YMIN(tile_bb));
-  // data.location_in_tile.min_corner().set<0>(static_cast<int>(floor(xscale*(XMIN(data.location_in_scene)-XMIN(tile_bb)))));
-  // data.location_in_tile.min_corner().set<1>(static_cast<int>(floor(yscale*(YMIN(data.location_in_scene)-YMIN(tile_bb)))));
-  // data.location_in_tile.max_corner().set<0>(static_cast<int>(ceil(xscale*(XMAX(data.location_in_scene)-XMIN(tile_bb)))));
-  // data.location_in_tile.max_corner().set<1>(static_cast<int>(ceil(yscale*(YMAX(data.location_in_scene)-YMIN(tile_bb)))));
-
   // Open red, green, blue datasets
   sprintf(pattern, "%s%s", DEFAULT_PREFIX_2, pair.second.filename);
   for (int i = 4; i > 1; --i) {
@@ -172,8 +160,10 @@ int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
     bands[4-i] = GDALGetRasterBand(handles[4-i], 1);
   }
 
-  data.texture_width  = 64; //std::max(64, XMAX(data.location_in_tile)-XMIN(data.location_in_tile));
-  data.texture_height = 64; //std::max(64, YMAX(data.location_in_tile)-YMIN(data.location_in_tile));
+  double w = (XMAX(data.location_in_scene) - XMIN(data.location_in_scene)) * (TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb)));
+  double h = (YMAX(data.location_in_scene) - YMIN(data.location_in_scene)) * (TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb)));
+  data.texture_width  = std::max(64, static_cast<int>(round(w)));
+  data.texture_height = std::max(64, static_cast<int>(round(h)));
   data.xscale = (double)data.texture_width / pair.second.width;
   data.yscale = (double)data.texture_height / pair.second.height;
 
@@ -258,10 +248,10 @@ void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
   fetch(pair, tile_bounding_box, data);
 }
 
-void zxy_commit(const std::vector<texture_data> & all_data)
+void zxy_commit(const std::vector<texture_data> & texture_list)
 {
-  for (unsigned int k = 0; k < all_data.size(); ++k) {
-    const auto data = all_data[k];
+  for (unsigned int k = 0; k < texture_list.size(); ++k) {
+    const auto data = texture_list[k];
 
     // #pragma omp simd collapse(2)
     for (int j = 0; j <= TILE_SIZE; ++j) { // tile coordinate
