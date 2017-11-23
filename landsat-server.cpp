@@ -69,18 +69,12 @@ cache * lru = nullptr;
 #define XMAX(b) ((b).max_corner().get<0>())
 #define YMAX(b) ((b).max_corner().get<1>())
 
-// #define OVERZOOM_FACTOR (2)
-// #define OVERZOOM (overzoom ? OVERZOOM_FACTOR : 1)
-
 uint8_t tile[TILE_SIZE*4]; // RGBA ergo 4
 
+void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data);
 int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data);
+void zxy_commit(const std::vector<texture_data> & data);
 uint8_t sigmoidal(uint16_t _u);
-// void load_scene(landsat_scene * s, int verbose);
-// void zxy_approx_commit();
-// void zxy_approx_read(int z, int _x, int _y, landsat_scene * s, int verbose);
-// void zxy_exact_commit(int overzoom);
-void zxy_exact_read(int z, int x, int y, const value_t & pair, texture_data & data);
 
 
 void preload(int verbose, void * extra)
@@ -118,29 +112,18 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
     rtree_ptr->query(bgi::intersects(box), std::back_inserter(results));
   }
 
-  // int exact = (z < 7) ? 1 : 0;
-  // // int overzoom = (z < 3) ? 1 : 0;
-
   data.resize(results.size());
 
   #pragma omp parallel for schedule(dynamic, 1)
   for (int i = -1; i < (int)results.size(); ++i) {
     if (i == -1)
       memset(tile, 0, sizeof(tile));
-    else /*if (exact)*/
-      zxy_exact_read(z, x, y, results[i], data[i]);
-    // else if (!exact)
-    //   zxy_approx_read(z, x, y, results[i], verbose);
+    else
+      zxy_read(z, x, y, results[i], data[i]);
   }
 
-  fprintf(stderr, "XXX\n");
-  // // Sample from textures to produce tile
-  // if (exact)
-  //   zxy_exact_commit(overzoom);
-  // else
-  //   zxy_approx_commit();
-
-  // write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
+  // zxy_commit(data);
+  write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
 int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
@@ -197,7 +180,7 @@ int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
   return 1;
 }
 
-void zxy_exact_read(int z, int x, int y, const value_t & pair, texture_data & data)
+void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
 {
   double xmin = std::numeric_limits<double>::max();
   double ymin = std::numeric_limits<double>::max();
@@ -254,108 +237,16 @@ void zxy_exact_read(int z, int x, int y, const value_t & pair, texture_data & da
   }
 
   /* Bounding box of the tile in image coordinates */
-  box_t bounding_box = box_t(point_t(round(xmin), round(ymin)), point_t(round(xmax), round(ymax)));
+  box_t tile_bounding_box = box_t(point_t(round(xmin), round(ymin)), point_t(round(xmax), round(ymax)));
 
   /* Textures and texture bounding box (the latter in tile coordinates) */
   for (int i = 0; i < 3; ++i)
     data.textures[i] = static_cast<uint16_t *>(calloc(TILE_SIZE * TILE_SIZE, sizeof(uint16_t)));
 
-  fetch(pair, bounding_box, data);
-  // s->dirty = fetch(s, overzoom, verbose);
+  fetch(pair, tile_bounding_box, data);
 }
 
-// void zxy_approx_commit()
-// {
-//   for (int i = 0; i < scene_count; ++i) {
-
-//     landsat_scene * s = scene + i;
-
-//     if (!s->dirty) continue;
-
-//     for (unsigned int j = 0; (j < s->tile_window_height); ++j) {
-//       for (unsigned int i = 0; (i < s->tile_window_width); ++i) {
-//         uint8_t red, byte = 0;
-//         int tile_index = ((i + s->tile_window_xmin) + (j + s->tile_window_ymin)*TILE_SIZE)<<2;
-//         int texture_index = (i + j*s->tile_window_width);
-
-//         byte |= red = sigmoidal(s->r_texture[texture_index]);
-//         if (tile[tile_index + 3] == 0 || tile[tile_index + 0] < red) { // write into empty pixels
-//           tile[tile_index + 0] = red;
-//           byte |= tile[tile_index + 1] = sigmoidal(s->g_texture[texture_index]);
-//           byte |= tile[tile_index + 2] = sigmoidal(s->b_texture[texture_index]);
-//           tile[tile_index + 3] = (byte ? -1 : 0);
-//         }
-//       }
-//     }
-//   }
-// }
-
-// void zxy_approx_read(int z, int _x, int _y, landsat_scene * s, int verbose)
-// {
-//   double * top   = s->coordinates.periphery.top;
-//   double * bot   = s->coordinates.periphery.bot;
-//   double * left  = s->coordinates.periphery.left;
-//   double * right = s->coordinates.periphery.right;
-//   double xmin = DBL_MAX, ymin = DBL_MAX;
-//   double xmax = DBL_MIN, ymax = DBL_MIN;
-
-//   if (verbose) {
-//     fprintf(stderr,
-//             ANSI_COLOR_YELLOW "z=%d x=%d y=%d pid=%d" ANSI_COLOR_RESET "\n",
-//             z, _x, _y, getpid());
-//   }
-
-//   /*
-//     TMS to Pseudo Web Mercator
-//     Source: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
-//   */
-//   for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
-//     // top, bottom x-values
-//     top[i+0] = _x + (i/(TILE_SIZE*2.0));     // tile space
-//     top[i+0] /= pow(2.0, z);                 // 0-1 scaled, translated Web Mercator
-//     top[i+0] = (2*top[i+0] - 1) * M_PI;      // Web Mercator in radians
-//     top[i+0] = bot[i+0] = top[i+0] * RADIUS; // Web Mercator in radians*radius
-
-//     // top, bottom y-values
-//     top[i+1] = (1 - 2*((_y+0) / pow(2.0, z))) * M_PI * RADIUS;
-//     bot[i+1] = (1 - 2*((_y+1) / pow(2.0, z))) * M_PI * RADIUS;
-
-//     // left, right x-values
-//     left[i+0]  = (2*((_x+0) / pow(2.0, z)) - 1) * M_PI * RADIUS;
-//     right[i+0] = (2*((_x+1) / pow(2.0, z)) - 1) * M_PI * RADIUS;
-
-//     // left, right y-values
-//     left[i+1] = _y + (i/(TILE_SIZE*2.0));
-//     left[i+1] /= pow(2.0, z);
-//     left[i+1] = right[i+1] = (1 - 2*left[i+1]) * M_PI * RADIUS;
-//   }
-
-//   /* Web Mercator to world coordinates */
-//   pj_transform(webmercator_pj, s->lesser.projection,
-//                TILE_SIZE<<2, 2, top, top+1, NULL); //top, bot, left, right ergo shift
-
-//   /* World coordinates to image coordinates */
-//   for (int i = 0; i < (TILE_SIZE<<1); i+=2) {
-//     world_to_image(top+i, s->lesser.transform);
-//     world_to_image(bot+i, s->lesser.transform);
-//     world_to_image(left+i, s->lesser.transform);
-//     world_to_image(right+i, s->lesser.transform);
-//     xmin = fmin(right[i], fmin(left[i], fmin(bot[i], fmin(top[i], xmin))));
-//     xmax = fmax(right[i], fmax(left[i], fmax(bot[i], fmax(top[i], xmax))));
-//     ymin = fmin(right[i+1], fmin(left[i+1], fmin(bot[i+1], fmin(top[i+1], ymin))));
-//     ymax = fmax(right[i+1], fmax(left[i+1], fmax(bot[i+1], fmax(top[i+1], ymax))));
-//   }
-
-//   /* Bounding box of the tile */
-//   s->xmin = round(xmin);
-//   s->xmax = round(xmax);
-//   s->ymin = round(ymin);
-//   s->ymax = round(ymax);
-
-//   s->dirty = fetch(s, 0, verbose);
-// }
-
-// void zxy_exact_commit(int overzoom)
+// void zxy_commit(int overzoom)
 // {
 //   for (int i = 0; i < scene_count; ++i) {
 //     landsat_scene * s = scene + i;
