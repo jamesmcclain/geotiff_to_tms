@@ -69,12 +69,13 @@ int main(int argc, const char ** argv)
     sscanf(argv[1], "%d", &p);
   fprintf(stderr, ANSI_COLOR_BLUE "P = %d" ANSI_COLOR_RESET "\n", p);
 
-#if 0
-  preload(1);
-  load(1);
+#if 1
+  preload(1, NULL);
+  load(1, NULL);
   int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-  zxy(fd, 2, 2, 1, 1);
-  fsync(fd); close(fd);
+  zxy(fd, 2, 2, 1, 1, NULL);
+  /* zxy(fd, 4, 11, 6, 1, NULL); */
+  fsync(fd); shutdown(fd, SHUT_RDWR); close(fd);
 #else
   /* Create socket */
   if ((fd1 = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
@@ -97,14 +98,14 @@ int main(int argc, const char ** argv)
   }
 
   /* Global backend initialization */
-  preload(1);
+  preload(1, NULL);
 
   /* Fork */
   signal(SIGPIPE, SIG_IGN);
   for (int i = 0; (i < p-1) && fork(); ++i);
 
   /* Per-process backend initialization */
-  load(1);
+  load(1, NULL);
 
   /* Handle requests */
   while (1) {
@@ -125,7 +126,7 @@ int main(int argc, const char ** argv)
     fullread(fd2, buffer, sizeof(buffer));
     if (sscanf(buffer, "GET /%d/%d/%d.png HTTP/1.1", &z, &x, &y) == 3) {
       fullwrite(fd2, twohundred, strlen(twohundred));
-      zxy(fd2, z, x, y, 1);
+      zxy(fd2, z, x, y, 1, NULL);
     }
     else {
       fullwrite(fd2, fourohfour, strlen(fourohfour));

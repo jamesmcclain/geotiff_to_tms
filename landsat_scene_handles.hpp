@@ -29,22 +29,78 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __LANDSAT_SCENE_H__
-#define __LANDSAT_SCENE_H__
+#ifndef __LANDSAT_SCENE_HANDLES_HPP__
+#define __LANDSAT_SCENE_HANDLES_HPP__
 
+#include "lesser_landsat_scene.h"
 #include "gdal.h"
 #include "cpl_conv.h"
 #include "ogr_srs_api.h"
 #include "proj_api.h"
 
-#define MAX_FILENAME_LEN (1<<8)
 
+// Resource: https://en.wikipedia.org/wiki/Rule_of_three_(C++_programming)
+class landsat_scene_handles {
 
-struct landsat_scene {
-  char filename[MAX_FILENAME_LEN];
-  projPJ projection;
-  double transform[6];
-  double width, height; // Dimensions in image coordinates
+ public:
+  landsat_scene_handles() :
+    r(nullptr), g(nullptr), b(nullptr), p(nullptr) {}
+
+  landsat_scene_handles(const landsat_scene_handles & other) :
+    r(other.r), g(other.g), b(other.b), p(other.p) {}
+
+  landsat_scene_handles(landsat_scene_handles && other) noexcept :
+    r(other.r), g(other.g), b(other.b), p(other.p)
+  {
+    other.r = other.g = other.b = other.p = nullptr;
+  }
+
+  landsat_scene_handles & operator=(const landsat_scene_handles & other)
+  {
+    landsat_scene_handles tmp(other);
+    *this = std::move(tmp);
+    return *this;
+  }
+
+  landsat_scene_handles & operator=(landsat_scene_handles && other) noexcept
+  {
+    pj_free(p);
+    GDALClose(b);
+    GDALClose(g);
+    GDALClose(r);
+
+    r = other.r;
+    g = other.g;
+    b = other.b;
+    p = other.p;
+
+    other.r = other.g = other.b = other.p = nullptr;
+
+    return *this;
+  }
+
+  landsat_scene_handles(GDALDatasetH red, GDALDatasetH green, GDALDatasetH blue, projPJ proj) :
+    r(red), g(green), b(blue), p(proj) {}
+
+  ~landsat_scene_handles() noexcept
+  {
+    pj_free(p);
+    GDALClose(b);
+    GDALClose(g);
+    GDALClose(r);
+  }
+
+  bool operator!=(const landsat_scene_handles & other) const
+  {
+    return ((r != other.r) || (g != other.g) || (b != other.b) || (p != other.p));
+  }
+
+private:
+  GDALDatasetH r;
+  GDALDatasetH g;
+  GDALDatasetH b;
+  projPJ p;
+
 };
 
 #endif

@@ -29,19 +29,69 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdint.h>
+#ifndef __LANDSAT_H__
+#define __LANDSAT_H__
 
-#ifndef __PNGWRITE_H__
-#define __PNGWRITE_H__
+#include "gdal.h"
+#include "cpl_conv.h"
+#include "ogr_srs_api.h"
+#include "proj_api.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "constants.h"
+#include "lesser_landsat_scene.h"
 
-  void write_png(int fd, const uint8_t * tile, unsigned int width, unsigned int height, int paranoid);
 
-#ifdef __cplusplus
-}
-#endif
+struct periphery_struct {
+  double   top[TILE_SIZE<<1]; // two coordinates ergo shift
+  double   bot[TILE_SIZE<<1];
+  double  left[TILE_SIZE<<1];
+  double right[TILE_SIZE<<1];
+};
+
+union coordinates_struct {
+  struct periphery_struct periphery;
+  double patch [TILE_SIZE2<<1]; // two coordinates ergo shift
+};
+
+typedef struct greater_landsat_scene_struct {
+  struct lesser_landsat_scene_struct lesser;
+
+  // Datasets
+  GDALDatasetH r_dataset;
+  GDALDatasetH g_dataset;
+  GDALDatasetH b_dataset;
+
+  // Bands
+  GDALRasterBandH r_band;
+  GDALRasterBandH g_band;
+  GDALRasterBandH b_band;
+
+  // Textures
+  uint16_t r_texture[TILE_SIZE2];
+  uint16_t g_texture[TILE_SIZE2];
+  uint16_t b_texture[TILE_SIZE2];
+
+  // Coordinates
+  union coordinates_struct coordinates;
+
+  // bounding box for the current tile in source image coordinates
+  double xmin, xmax, ymin, ymax;
+
+  // Information about the source image.  The bounding box given on
+  // the second and third lines is the intersection of the source
+  // image with the tile.
+  uint32_t src_width, src_height;
+  uint32_t src_window_xmin, src_window_ymin;
+  uint32_t src_window_width, src_window_height;
+
+  // The starting point of the texture within the tile, as well as its
+  // height and width.  Here, the red, green, and blue textures are
+  // referred to in the singular.
+  uint32_t tile_window_xmin, tile_window_ymin;
+  uint32_t tile_window_width, tile_window_height;
+
+  int dirty;
+
+} landsat_scene;
 
 #endif

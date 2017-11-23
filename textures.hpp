@@ -29,72 +29,22 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __LANDSAT_H__
-#define __LANDSAT_H__
+#ifndef __TEXTURES_DATA_HPP__
+#define __TEXTURES_DATA_HPP__
 
-#include "gdal.h"
-#include "proj_api.h"
-#include "constants.h"
+#include <cstdint>
+#include <vector>
+
+#include "rtree.hpp"
 
 
-struct periphery_struct {
-  double   top[TILE_SIZE<<1]; // two coordinates ergo shift
-  double   bot[TILE_SIZE<<1];
-  double  left[TILE_SIZE<<1];
-  double right[TILE_SIZE<<1];
+struct texture_data {
+  // ibox_t location_in_tile;
+  box_t location_in_scene;
+  std::vector<double> xs, ys;
+  uint16_t * textures[3] = {nullptr, nullptr, nullptr};
+  uint32_t texture_width = 0, texture_height = 0;
+  double xscale, yscale;
 };
-
-union coordinates_struct {
-  struct periphery_struct periphery;
-  double patch [TILE_SIZE2<<1]; // two coordinates ergo shift
-};
-
-typedef struct landsat_scene_struct {
-  // Filename
-  const char * filename;
-
-  // Datasets
-  GDALDatasetH r_dataset;
-  GDALDatasetH g_dataset;
-  GDALDatasetH b_dataset;
-
-  // Bands
-  GDALRasterBandH r_band;
-  GDALRasterBandH g_band;
-  GDALRasterBandH b_band;
-
-  // Textures
-  uint16_t r_texture[TILE_SIZE2];
-  uint16_t g_texture[TILE_SIZE2];
-  uint16_t b_texture[TILE_SIZE2];
-
-  // Projection
-  projPJ destination_pj;
-
-  // Transform
-  double transform[6];
-
-  // Coordinates
-  union coordinates_struct coordinates;
-
-  // bounding box for the current tile in source image coordinates
-  double xmin, xmax, ymin, ymax;
-
-  // Information about the source image.  The bounding box given on
-  // the second and third lines is the intersection of the source
-  // image with the tile.
-  uint32_t src_width, src_height;
-  uint32_t src_window_xmin, src_window_ymin;
-  uint32_t src_window_width, src_window_height;
-
-  // The starting point of the texture within the tile, as well as its
-  // height and width.  Here, the red, green, and blue textures are
-  // referred to in the singular.
-  uint32_t tile_window_xmin, tile_window_ymin;
-  uint32_t tile_window_width, tile_window_height;
-
-  int dirty;
-
-} landsat_scene;
 
 #endif

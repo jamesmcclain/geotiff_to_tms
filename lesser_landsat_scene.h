@@ -29,19 +29,23 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef __LANDSAT_SCENE_H__
+#define __LANDSAT_SCENE_H__
+
 #include <stdint.h>
 
-#ifndef __PNGWRITE_H__
-#define __PNGWRITE_H__
+#define DEFAULT_INDEXFILE "/tmp/index.data"
+#define DEFAULT_PREFIX_1 "https://s3-us-west-2.amazonaws.com/landsat-pds/"
+#define DEFAULT_PREFIX_2 "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
+#define MAX_LEN (1<<10)
+#define WEBMERCATOR "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
-  void write_png(int fd, const uint8_t * tile, unsigned int width, unsigned int height, int paranoid);
-
-#ifdef __cplusplus
-}
-#endif
+struct lesser_landsat_scene_struct {
+  char filename[1<<8];
+  char proj4[1<<8];
+  double transform[6];
+  uint32_t width, height; // Dimensions in image coordinates
+};
 
 #endif

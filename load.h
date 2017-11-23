@@ -33,8 +33,16 @@
 #ifndef __LOAD_H__
 #define __LOAD_H__
 
-void preload(int verbose);
-void load(int verbose);
-void zxy(int fd, int z, int _x, int _y, int verbose);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+  void preload(int verbose, void * extra);
+  void load(int verbose, void * extra);
+  void zxy(int fd, int z, int x, int y, int verbose, void * extra);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
