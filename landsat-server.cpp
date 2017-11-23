@@ -48,6 +48,7 @@
 #include "pngwrite.h"
 #include "projection.h"
 
+#include "textures.hpp"
 #include "landsat_scene_handles.hpp"
 #include "rtree.hpp"
 
@@ -73,13 +74,13 @@ cache * lru = nullptr;
 
 uint8_t tile[TILE_SIZE*4]; // RGBA ergo 4
 
-int fetch(const value_t & pair, const box_t & tile_bb, uint16_t * textures[3], ibox_t & texture_box);
+int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data);
 uint8_t sigmoidal(uint16_t _u);
 // void load_scene(landsat_scene * s, int verbose);
 // void zxy_approx_commit();
 // void zxy_approx_read(int z, int _x, int _y, landsat_scene * s, int verbose);
 // void zxy_exact_commit(int overzoom);
-void zxy_exact_read(int z, int x, int y, const value_t & pair);
+void zxy_exact_read(int z, int x, int y, const value_t & pair, texture_data & data);
 
 
 void preload(int verbose, void * extra)
@@ -87,7 +88,7 @@ void preload(int verbose, void * extra)
   GDALAllRegister();
 
   indexfile = DEFAULT_INDEXFILE;
-  prefix = DEFAULT_PREFIX;
+  prefix = DEFAULT_PREFIX_2;
   webmercator = pj_init_plus(WEBMERCATOR);
 
   file = new bi::managed_mapped_file(bi::open_only, indexfile);
@@ -102,6 +103,7 @@ void load(int verbose, void * extra)
 void zxy(int fd, int z, int x, int y, int verbose, void * extra)
 {
   std::vector<value_t> results;
+  std::vector<texture_data> data;
 
   {
     double z2 = pow(2.0, z);
@@ -116,19 +118,22 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
     rtree_ptr->query(bgi::intersects(box), std::back_inserter(results));
   }
 
-  int exact = (z < 7) ? 1 : 0;
-  // int overzoom = (z < 3) ? 1 : 0;
+  // int exact = (z < 7) ? 1 : 0;
+  // // int overzoom = (z < 3) ? 1 : 0;
 
-  // #pragma omp parallel for schedule(dynamic, 1)
+  data.resize(results.size());
+
+  #pragma omp parallel for schedule(dynamic, 1)
   for (int i = -1; i < (int)results.size(); ++i) {
     if (i == -1)
       memset(tile, 0, sizeof(tile));
     else /*if (exact)*/
-      zxy_exact_read(z, x, y, results[i]);
+      zxy_exact_read(z, x, y, results[i], data[i]);
     // else if (!exact)
     //   zxy_approx_read(z, x, y, results[i], verbose);
   }
 
+  fprintf(stderr, "XXX\n");
   // // Sample from textures to produce tile
   // if (exact)
   //   zxy_exact_commit(overzoom);
@@ -138,10 +143,7 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   // write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
-int fetch(const value_t & pair,
-          const box_t & tile_bb,
-          uint16_t * textures[3],
-          ibox_t & texture_box)
+int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
 {
   GDALDatasetH handles[3];
   GDALRasterBandH bands[3];
@@ -154,25 +156,29 @@ int fetch(const value_t & pair,
   if (!bg::intersects(tile_bb, image_bb))
     return 0;
 
-  // Compute image box
+  // Compute image box (the intersection of the tile bounding box with
+  // the image bounding box.
   box_t image_box;
   bg::intersection(tile_bb, image_bb, image_box);
 
   // Compute texture box
   double xscale = TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb));
   double yscale = TILE_SIZE / (YMAX(tile_bb) - YMIN(tile_bb));
-  texture_box.min_corner().set<0>(static_cast<int>(floor(xscale*(XMIN(image_box)-XMIN(tile_bb)))));
-  texture_box.min_corner().set<1>(static_cast<int>(floor(yscale*(YMIN(image_box)-YMIN(tile_bb)))));
-  texture_box.max_corner().set<0>(static_cast<int>(ceil(xscale*(XMAX(image_box)-XMIN(tile_bb)))));
-  texture_box.max_corner().set<1>(static_cast<int>(ceil(yscale*(YMAX(image_box)-YMIN(tile_bb)))));
+  data.location_in_tile.min_corner().set<0>(static_cast<int>(floor(xscale*(XMIN(image_box)-XMIN(tile_bb)))));
+  data.location_in_tile.min_corner().set<1>(static_cast<int>(floor(yscale*(YMIN(image_box)-YMIN(tile_bb)))));
+  data.location_in_tile.max_corner().set<0>(static_cast<int>(ceil(xscale*(XMAX(image_box)-XMIN(tile_bb)))));
+  data.location_in_tile.max_corner().set<1>(static_cast<int>(ceil(yscale*(YMAX(image_box)-YMIN(tile_bb)))));
 
   // Open reg, green, blue datasets
-  sprintf(pattern, "%s%s", DEFAULT_PREFIX, pair.second.filename);
+  sprintf(pattern, "%s%s", DEFAULT_PREFIX_2, pair.second.filename);
   for (int i = 4; i > 1; --i) {
     sprintf(filename, pattern, i);
     if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) exit(-1); // XXX
     bands[4-i] = GDALGetRasterBand(handles[4-i], 1);
   }
+
+  data.texture_width  = std::max(64, XMAX(data.location_in_tile)-XMIN(data.location_in_tile));
+  data.texture_height = std::max(64, YMAX(data.location_in_tile)-YMIN(data.location_in_tile));
 
   // Fetch textures
   // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
@@ -183,32 +189,33 @@ int fetch(const value_t & pair,
                      static_cast<int>(floor(YMIN(image_box))),
                      static_cast<int>(ceil(XMAX(image_box)-XMIN(image_box))),
                      static_cast<int>(ceil(YMAX(image_box)-YMIN(image_box))),
-                     textures[i],
-                     XMAX(texture_box)-XMIN(texture_box), YMAX(texture_box)-YMIN(texture_box),
+                     data.textures[i],
+                     data.texture_width, data.texture_height,
                      GDT_UInt16, 0, 0)) exit(-1);
   }
 
   return 1;
 }
 
-void zxy_exact_read(int z, int x, int y, const value_t & pair)
+void zxy_exact_read(int z, int x, int y, const value_t & pair, texture_data & data)
 {
   double xmin = std::numeric_limits<double>::max();
   double ymin = std::numeric_limits<double>::max();
   double xmax = std::numeric_limits<double>::min();
   double ymax = std::numeric_limits<double>::min();
-  auto xs = std::vector<double>(TILE_SIZE * TILE_SIZE);
-  auto ys = std::vector<double>(TILE_SIZE * TILE_SIZE);
+
+  data.xs.resize(TILE_SIZE * TILE_SIZE);
+  data.ys.resize(TILE_SIZE * TILE_SIZE);
 
   /*
-    TMS to Pseudo Web Mercator
+    TMS to Web Mercator
     Source: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
     Source: https://software.intel.com/en-us/node/524530
   */
   {
     double z2 = pow(2.0, z);
 
-    // #pragma omp simd collapse(2)
+    #pragma omp simd collapse(2)
     for (int j = 0; j < TILE_SIZE; ++j) {
       for ( int i = 0; i < TILE_SIZE; ++i) {
         int index = (i + j*TILE_SIZE);
@@ -217,26 +224,26 @@ void zxy_exact_read(int z, int x, int y, const value_t & pair)
         u = x + (i/((double)(TILE_SIZE+1))); // tile space
         u /= z2;                             // 0-1 scaled, translated Web Mercator
         u = (2*u - 1) * M_PI * RADIUS;       // Web Mercator
-        xs[index] = u;
+        data.xs[index] = u;
 
         v = y + (j/((double)(TILE_SIZE+1))); // tile space
         v /= z2;                             // 0-1 scaled, translated Web Mercator
         v = (1 - 2*v) * M_PI * RADIUS;       // Web Mercator
-        ys[index] = v;
+        data.ys[index] = v;
       }
     }
   }
 
   /* Web Mercator to world coordinates */
   projPJ projection = pj_init_plus(pair.second.proj4);
-  pj_transform(webmercator, projection, TILE_SIZE*TILE_SIZE, 1, &xs[0], &ys[0], NULL);
+  pj_transform(webmercator, projection, TILE_SIZE*TILE_SIZE, 1, &data.xs[0], &data.ys[0], NULL);
   pj_free(projection);
 
   /* World coordinates to image coordinates */
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE);
-      double uv[2] = {xs[index], ys[index]};
+      double uv[2] = {data.xs[index], data.ys[index]};
 
       world_to_image(uv, pair.second.transform);
       xmin = fmin(uv[0], xmin);
@@ -247,17 +254,13 @@ void zxy_exact_read(int z, int x, int y, const value_t & pair)
   }
 
   /* Bounding box of the tile in image coordinates */
-  box_t bounding_box = box_t(point_t(round(xmin), round(ymin)),
-                             point_t(round(xmax), round(ymax)));
+  box_t bounding_box = box_t(point_t(round(xmin), round(ymin)), point_t(round(xmax), round(ymax)));
 
   /* Textures and texture bounding box (the latter in tile coordinates) */
-  ibox_t texture_box;
-  uint16_t * textures[3];
   for (int i = 0; i < 3; ++i)
-    textures[i] = static_cast<uint16_t *>(calloc(TILE_SIZE * TILE_SIZE, sizeof(uint16_t)));
+    data.textures[i] = static_cast<uint16_t *>(calloc(TILE_SIZE * TILE_SIZE, sizeof(uint16_t)));
 
-  fetch(pair, bounding_box, textures, texture_box);
-  fprintf(stderr, "XXX\n");
+  fetch(pair, bounding_box, data);
   // s->dirty = fetch(s, overzoom, verbose);
 }
 

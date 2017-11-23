@@ -29,78 +29,20 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __LANDSAT_SCENE_HANDLES_HPP__
-#define __LANDSAT_SCENE_HANDLES_HPP__
+#ifndef __TEXTURES_DATA_HPP__
+#define __TEXTURES_DATA_HPP__
 
-#include "lesser_landsat_scene.h"
-#include "gdal.h"
-#include "cpl_conv.h"
-#include "ogr_srs_api.h"
-#include "proj_api.h"
+#include <cstdint>
+#include <vector>
+
+#include "rtree.hpp"
 
 
-// Resource: https://en.wikipedia.org/wiki/Rule_of_three_(C++_programming)
-class landsat_scene_handles {
-
- public:
-  landsat_scene_handles() :
-    r(nullptr), g(nullptr), b(nullptr), p(nullptr) {}
-
-  landsat_scene_handles(const landsat_scene_handles & other) :
-    r(other.r), g(other.g), b(other.b), p(other.p) {}
-
-  landsat_scene_handles(landsat_scene_handles && other) noexcept :
-    r(other.r), g(other.g), b(other.b), p(other.p)
-  {
-    other.r = other.g = other.b = other.p = nullptr;
-  }
-
-  landsat_scene_handles & operator=(const landsat_scene_handles & other)
-  {
-    landsat_scene_handles tmp(other);
-    *this = std::move(tmp);
-    return *this;
-  }
-
-  landsat_scene_handles & operator=(landsat_scene_handles && other) noexcept
-  {
-    pj_free(p);
-    GDALClose(b);
-    GDALClose(g);
-    GDALClose(r);
-
-    r = other.r;
-    g = other.g;
-    b = other.b;
-    p = other.p;
-
-    other.r = other.g = other.b = other.p = nullptr;
-
-    return *this;
-  }
-
-  landsat_scene_handles(GDALDatasetH red, GDALDatasetH green, GDALDatasetH blue, projPJ proj) :
-    r(red), g(green), b(blue), p(proj) {}
-
-  ~landsat_scene_handles() noexcept
-  {
-    pj_free(p);
-    GDALClose(b);
-    GDALClose(g);
-    GDALClose(r);
-  }
-
-  bool operator!=(const landsat_scene_handles & other) const
-  {
-    return ((r != other.r) || (g != other.g) || (b != other.b) || (p != other.p));
-  }
-
-private:
-  GDALDatasetH r;
-  GDALDatasetH g;
-  GDALDatasetH b;
-  projPJ p;
-
+struct texture_data {
+  ibox_t location_in_tile;
+  std::vector<double> xs, ys;
+  uint16_t * textures[3] = {nullptr, nullptr, nullptr};
+  uint32_t texture_width = 0, texture_height = 0;
 };
 
 #endif
