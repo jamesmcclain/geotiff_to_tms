@@ -40,7 +40,6 @@
 
 
 struct texture_data {
-  // ibox_t location_in_tile;
   box_t location_in_scene;
   std::vector<double> xs, ys;
   std::shared_ptr<uint16_t> textures[3];
