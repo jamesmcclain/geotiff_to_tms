@@ -32,75 +32,20 @@
 #ifndef __LANDSAT_SCENE_HANDLES_HPP__
 #define __LANDSAT_SCENE_HANDLES_HPP__
 
-#include "lesser_landsat_scene.h"
+#include <vector>
+#include <memory>
+
 #include "gdal.h"
 #include "cpl_conv.h"
 #include "ogr_srs_api.h"
 #include "proj_api.h"
 
+#include "lesser_landsat_scene.h"
 
-// Resource: https://en.wikipedia.org/wiki/Rule_of_three_(C++_programming)
-class landsat_scene_handles {
 
- public:
-  landsat_scene_handles() :
-    r(nullptr), g(nullptr), b(nullptr), p(nullptr) {}
-
-  landsat_scene_handles(const landsat_scene_handles & other) :
-    r(other.r), g(other.g), b(other.b), p(other.p) {}
-
-  landsat_scene_handles(landsat_scene_handles && other) noexcept :
-    r(other.r), g(other.g), b(other.b), p(other.p)
-  {
-    other.r = other.g = other.b = other.p = nullptr;
-  }
-
-  landsat_scene_handles & operator=(const landsat_scene_handles & other)
-  {
-    landsat_scene_handles tmp(other);
-    *this = std::move(tmp);
-    return *this;
-  }
-
-  landsat_scene_handles & operator=(landsat_scene_handles && other) noexcept
-  {
-    pj_free(p);
-    GDALClose(b);
-    GDALClose(g);
-    GDALClose(r);
-
-    r = other.r;
-    g = other.g;
-    b = other.b;
-    p = other.p;
-
-    other.r = other.g = other.b = other.p = nullptr;
-
-    return *this;
-  }
-
-  landsat_scene_handles(GDALDatasetH red, GDALDatasetH green, GDALDatasetH blue, projPJ proj) :
-    r(red), g(green), b(blue), p(proj) {}
-
-  ~landsat_scene_handles() noexcept
-  {
-    pj_free(p);
-    GDALClose(b);
-    GDALClose(g);
-    GDALClose(r);
-  }
-
-  bool operator!=(const landsat_scene_handles & other) const
-  {
-    return ((r != other.r) || (g != other.g) || (b != other.b) || (p != other.p));
-  }
-
-private:
-  GDALDatasetH r;
-  GDALDatasetH g;
-  GDALDatasetH b;
-  projPJ p;
-
+struct landsat_scene_handles {
+  std::vector<std::shared_ptr<GDALDatasetH>> rgb;
+  std::shared_ptr<projPJ> p;
 };
 
 #endif
