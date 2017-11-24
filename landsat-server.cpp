@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cmath>
 #include <limits>
+#include <memory>
 
 #include <arpa/inet.h>
 
@@ -72,7 +73,7 @@ cache * lru = nullptr;
 uint8_t tile[TILE_SIZE2*4]; // RGBA ergo 4
 
 void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data);
-int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data);
+void fetch(const value_t & pair, const box_t & tile_bb, texture_data & data);
 void zxy_commit(const std::vector<texture_data> & data);
 uint8_t sigmoidal(uint16_t _u);
 
@@ -110,12 +111,7 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   rtree_ptr->query(bgi::intersects(box), std::back_inserter(results));
   texture_list.resize(results.size());
 
-  for (unsigned int i = 0; i < texture_list.size(); ++i) { // XXX
-    for (int j = 0; j < 3; ++j)
-      texture_list[i].textures[j] = static_cast<uint16_t *>(calloc(TILE_SIZE * TILE_SIZE, sizeof(uint16_t)));
-  }
-
-  // #pragma omp parallel for schedule(dynamic, 1)
+  #pragma omp parallel for schedule(dynamic, 1)
   for (int i = -1; i < (int)results.size(); ++i) {
     if (i == -1)
       memset(tile, 0, sizeof(tile));
@@ -125,14 +121,9 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
 
   zxy_commit(texture_list);
   write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
-
-  for (unsigned int i = 0; i < texture_list.size(); ++i) { // XXX
-    for (int j = 0; j < 3; ++j)
-      free(texture_list[i].textures[j]);
-  }
 }
 
-int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
+void fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
 {
   GDALDatasetH handles[3];
   GDALRasterBandH bands[3];
@@ -143,7 +134,7 @@ int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
 
   // If no intersection, short circuit
   if (!bg::intersects(tile_bb, image_bb))
-    return 0;
+    return;
 
   // Compute location of the tile within the scene (the intersection
   // of the tile bounding box with the image bounding box).
@@ -170,18 +161,20 @@ int fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
   // Fetch textures
   // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
   for (int i = 0; i < 3; ++i) {
+    data.textures[i] = std::shared_ptr<uint16_t>(new uint16_t[data.texture_width * data.texture_height],
+                                                 [](uint16_t * p){ delete[] p;});
     if (GDALRasterIO(bands[i],
                      GF_Read,
                      static_cast<int>(floor(XMIN(data.location_in_scene))),
                      static_cast<int>(floor(YMIN(data.location_in_scene))),
                      static_cast<int>(ceil(XMAX(data.location_in_scene)-XMIN(data.location_in_scene))),
                      static_cast<int>(ceil(YMAX(data.location_in_scene)-YMIN(data.location_in_scene))),
-                     data.textures[i],
+                     data.textures[i].get(),
                      data.texture_width, data.texture_height,
                      GDT_UInt16, 0, 0)) exit(-1);
   }
 
-  return 1;
+  return;
 }
 
 void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
@@ -266,12 +259,12 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
           int texture_index = u + v*(data.texture_width);
           uint8_t red, byte = 0;
 
-          byte |= red = sigmoidal(data.textures[0][texture_index]);
+          byte |= red = sigmoidal(data.textures[0].get()[texture_index]);
           if (tile[tile_index + 3] == 0 /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
-            byte |= tile[tile_index + 1] = sigmoidal(data.textures[1][texture_index]);
-            byte |= tile[tile_index + 2] = sigmoidal(data.textures[2][texture_index]);
+            byte |= tile[tile_index + 1] = sigmoidal(data.textures[1].get()[texture_index]);
+            byte |= tile[tile_index + 2] = sigmoidal(data.textures[2].get()[texture_index]);
             tile[tile_index + 3] = (byte ? -1 : 0);
           }
         }
