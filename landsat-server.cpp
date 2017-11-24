@@ -83,7 +83,7 @@ void preload(int verbose, void * extra)
   GDALAllRegister();
 
   indexfile = DEFAULT_INDEXFILE;
-  prefix = DEFAULT_PREFIX_2;
+  prefix = DEFAULT_READ_PREFIX;
   webmercator = pj_init_plus(WEBMERCATOR);
 
   file = new bi::managed_mapped_file(bi::open_only, indexfile);
@@ -141,7 +141,7 @@ void fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
   bg::intersection(tile_bb, image_bb, data.location_in_scene);
 
   // Open red, green, blue datasets
-  sprintf(pattern, "%s%s", DEFAULT_PREFIX_2, pair.second.filename);
+  sprintf(pattern, "%s%s", DEFAULT_READ_PREFIX, pair.second.filename);
   for (int i = 4; i > 1; --i) {
     sprintf(filename, pattern, i);
     if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) {

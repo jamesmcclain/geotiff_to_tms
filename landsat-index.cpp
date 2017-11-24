@@ -46,7 +46,6 @@
 #include "rtree.hpp"
 
 #define INCREMENTS (1<<8)
-#define PREFIX "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
 #define POSTFIX "index.html"
 
 const char * webmercator = WEBMERCATOR;
@@ -145,17 +144,20 @@ int main(int argc, const char ** argv)
   char buffer[MAX_LEN];
   char product_id[MAX_LEN];
   char infix[MAX_LEN];
-  const char * prefix = DEFAULT_PREFIX_1;
+  const char * list_prefix = DEFAULT_LIST_PREFIX;
+  const char * read_prefix = DEFAULT_READ_PREFIX;
   const char * indexfile = DEFAULT_INDEXFILE;
   int order_of_magnitude = 28;
 
   // Arguments from command line
   if (argc > 1) indexfile = argv[1];
   if (argc > 2) sscanf(argv[2], "%d", &order_of_magnitude);
-  if (argc > 3) prefix = argv[3];
+  if (argc > 3) list_prefix = argv[3];
+  if (argc > 4) read_prefix = argv[4];
   fprintf(stderr, ANSI_COLOR_BLUE "index file \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", indexfile);
   fprintf(stderr, ANSI_COLOR_BLUE "order of magnitude \t =" ANSI_COLOR_GREEN " %d" ANSI_COLOR_RESET "\n", order_of_magnitude);
-  fprintf(stderr, ANSI_COLOR_BLUE "prefix \t\t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", prefix);
+  fprintf(stderr, ANSI_COLOR_BLUE "list_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", list_prefix);
+  fprintf(stderr, ANSI_COLOR_BLUE "read_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", read_prefix);
 
   // Initialize
   webmercator_pj = pj_init_plus(webmercator);
@@ -164,7 +166,7 @@ int main(int argc, const char ** argv)
   // Read the scene list
   while (fgets(buffer, MAX_LEN, stdin) != NULL) {
     sscanf(buffer, "%[^,]", product_id);
-    sscanf(strstr(buffer, prefix) + strlen(prefix), "%s", infix);
+    sscanf(strstr(buffer, list_prefix) + strlen(list_prefix), "%s", infix);
     *(strstr(infix, POSTFIX)) = '\0';
     scene_list.push_back(std::make_pair(box_t(point_t(0, 0), point_t(1, 1)), lesser_landsat_scene_struct()));
     sprintf(scene_list.back().second.filename, "%s%s_B%%d.TIF", infix, product_id);
@@ -174,7 +176,7 @@ int main(int argc, const char ** argv)
   // Get metadata
   #pragma omp parallel for
   for (unsigned int i = 0; i < scene_list.size(); ++i) {
-    metadata(prefix, scene_list[i].second, true);
+    metadata(read_prefix, scene_list[i].second, true);
     bounding_box(scene_list[i]);
   }
 
