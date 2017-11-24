@@ -40,7 +40,7 @@
 
 uint8_t buffer[1<<20];
 
-void write_png(int fd, const uint8_t * tile, unsigned int width, unsigned int height, int paranoid)
+void png_write(int fd, const uint8_t * tile, unsigned int width, unsigned int height, int paranoid)
 {
   FILE *fp;
   png_structp png_ptr;

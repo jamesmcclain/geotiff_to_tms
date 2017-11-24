@@ -120,7 +120,7 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   }
 
   zxy_commit(texture_list);
-  write_png(fd, tile, TILE_SIZE, TILE_SIZE, 0);
+  png_write(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
 void fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
