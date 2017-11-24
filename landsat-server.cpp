@@ -38,7 +38,6 @@
 
 #include <arpa/inet.h>
 
-#include <boost/compute/detail/lru_cache.hpp>
 #include <boost/geometry/algorithms/intersection.hpp>
 #include <boost/geometry/algorithms/intersects.hpp>
 
@@ -50,19 +49,13 @@
 #include "projection.h"
 
 #include "textures.hpp"
-#include "landsat_scene_handles.hpp"
 #include "rtree.hpp"
-
-namespace bcd = boost::compute::detail;
-
-typedef bcd::lru_cache<const char *, landsat_scene_handles> cache;
 
 const char * indexfile = nullptr;
 const char * prefix = nullptr;
 rtree_t * rtree_ptr = nullptr;
 projPJ webmercator = nullptr;
 bi::managed_mapped_file * file = nullptr;
-cache * lru = nullptr;
 
 #define MAX_LEN (1<<10)
 #define XMIN(b) ((b).min_corner().get<0>())
@@ -78,6 +71,7 @@ void zxy_commit(const std::vector<texture_data> & data);
 uint8_t sigmoidal(uint16_t _u);
 
 
+// Global
 void preload(int verbose, void * extra)
 {
   GDALAllRegister();
@@ -88,9 +82,9 @@ void preload(int verbose, void * extra)
 
   file = new bi::managed_mapped_file(bi::open_only, indexfile);
   rtree_ptr = file->find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), allocator_t(file->get_segment_manager()));
-  lru = new cache(1<<16);
 }
 
+// Local
 void load(int verbose, void * extra)
 {
 }
