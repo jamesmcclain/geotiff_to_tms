@@ -40,7 +40,6 @@
 
 #include <boost/geometry/algorithms/intersection.hpp>
 #include <boost/geometry/algorithms/intersects.hpp>
-#include <boost/geometry/algorithms/within.hpp>
 
 #include "ansi.h"
 #include "greater_landsat_scene.h"
@@ -118,40 +117,48 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   png_write(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
-void fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
+void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data & data)
 {
   GDALDatasetH handles[3];
   GDALRasterBandH bands[3];
   char pattern[MAX_LEN];
   char filename[MAX_LEN];
 
-  box_t image_bb = box_t(point_t(0, 0), point_t(pair.second.width-1, pair.second.height-1));
+  box_t image_bounding_box = box_t(point_t(0, 0), point_t(scene.second.width-1, scene.second.height-1));
 
   // If no intersection, short circuit
-  if (!bg::intersects(tile_bb, image_bb))
+  if (!bg::intersects(tile_bounding_box, image_bounding_box))
     return;
 
-  // Compute location of the tile within the scene (the intersection
-  // of the tile bounding box with the image bounding box).
-  bg::intersection(tile_bb, image_bb, data.location_in_scene);
+  // Compute the texutre bounding box by intersecting the tile
+  // bounding box with the image (scene) bounding box.
+  bg::intersection(tile_bounding_box, image_bounding_box, data.bounding_box);
 
   // Compute dimensins and scales
-  double w = (XMAX(data.location_in_scene) - XMIN(data.location_in_scene)) * (TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb)));
-  double h = (YMAX(data.location_in_scene) - YMIN(data.location_in_scene)) * (TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb)));
+  double w = (XMAX(data.bounding_box) - XMIN(data.bounding_box)) * (TILE_SIZE / (XMAX(tile_bounding_box) - XMIN(tile_bounding_box)));
+  double h = (YMAX(data.bounding_box) - YMIN(data.bounding_box)) * (TILE_SIZE / (XMAX(tile_bounding_box) - XMIN(tile_bounding_box)));
   data.texture_width  = std::max(SMALL_TILE_SIZE, static_cast<int>(round(w)));
   data.texture_height = std::max(SMALL_TILE_SIZE, static_cast<int>(round(h)));
-  data.xscale = (double)data.texture_width / pair.second.width;
-  data.yscale = (double)data.texture_height / pair.second.height;
+  data.xscale = (double)data.texture_width / scene.second.width;
+  data.yscale = (double)data.texture_height / scene.second.height;
 
-  if (bg::within(image_bb, tile_bb) &&
+  if (((XMIN(data.bounding_box) == XMIN(image_bounding_box) && XMAX(data.bounding_box) == XMAX(image_bounding_box)) ||
+       (YMIN(data.bounding_box) == YMIN(image_bounding_box) && YMAX(data.bounding_box) == YMAX(image_bounding_box))) &&
       data.texture_width == data.texture_height &&
-      data.texture_width == SMALL_TILE_SIZE) {
+      data.texture_width == SMALL_TILE_SIZE) { // If previews are usable
+#if 1
+    fprintf(stderr, ANSI_COLOR_RED "%p | %lf %lf | %lf %lf" ANSI_COLOR_RESET "\n",
+            &scene,
+            XMIN(data.bounding_box), XMAX(data.bounding_box),
+            XMIN(image_bounding_box), XMAX(image_bounding_box));
+#endif
+    data.bounding_box = image_bounding_box; // adjust the texture bounding box
     for (int i = 0; i < 3; ++i)
-      data.textures[i] = static_cast<const uint16_t *>(pair.second.rgb[i]);
+      data.textures[i] = static_cast<const uint16_t *>(scene.second.rgb[i]);
   }
   else {
     // Open handles and bands
-    sprintf(pattern, "%s%s", DEFAULT_READ_PREFIX, pair.second.filename);
+    sprintf(pattern, "%s%s", DEFAULT_READ_PREFIX, scene.second.filename);
     for (int i = 4; i > 1; --i) {
       sprintf(filename, pattern, i);
       if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) {
@@ -168,13 +175,16 @@ void fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
                                                    [](uint16_t * p){ delete[] p;});
       if (GDALRasterIO(bands[i],
                        GF_Read,
-                       static_cast<int>(floor(XMIN(data.location_in_scene))),
-                       static_cast<int>(floor(YMIN(data.location_in_scene))),
-                       static_cast<int>(ceil(XMAX(data.location_in_scene)-XMIN(data.location_in_scene))),
-                       static_cast<int>(ceil(YMAX(data.location_in_scene)-YMIN(data.location_in_scene))),
+                       static_cast<int>(floor(XMIN(data.bounding_box))),
+                       static_cast<int>(floor(YMIN(data.bounding_box))),
+                       static_cast<int>(ceil(XMAX(data.bounding_box)-XMIN(data.bounding_box))),
+                       static_cast<int>(ceil(YMAX(data.bounding_box)-YMIN(data.bounding_box))),
                        std::get<std::shared_ptr<uint16_t>>(data.textures[i]).get(),
                        data.texture_width, data.texture_height,
-                       GDT_UInt16, 0, 0)) exit(-1);
+                       GDT_UInt16, 0, 0)) {
+        fprintf(stderr, ANSI_COLOR_RED "Could not fetch texture" ANSI_COLOR_RESET "\n");
+        exit(-1);
+      }
     }
 
     // Close handles
