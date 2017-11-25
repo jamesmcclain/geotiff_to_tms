@@ -42,7 +42,7 @@
 #define MAX_LEN (1<<10)
 
 
-struct lesser_landsat_scene_struct {
+struct __attribute__((__packed__)) lesser_landsat_scene_struct {
   char filename[1<<8];
   char proj4[1<<8];
   double transform[6];

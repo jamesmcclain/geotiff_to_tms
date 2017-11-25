@@ -41,7 +41,7 @@
 
 
 struct texture_data {
-  box_t location_in_scene;
+  box_t bounding_box;
   std::vector<double> xs, ys;
   std::variant<std::shared_ptr<uint16_t>, const uint16_t *> textures[3];
   uint32_t texture_width = 0, texture_height = 0;

@@ -91,7 +91,7 @@ void load(int verbose, void * extra)
 
 void zxy(int fd, int z, int x, int y, int verbose, void * extra)
 {
-  std::vector<value_t> results;
+  std::vector<value_t> scene_list;
   std::vector<texture_data> texture_list;
   double z2 = pow(2.0, z);
   double xmin = (2*((x+0) / z2) - 1) * M_PI * RADIUS;
@@ -102,15 +102,15 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   point_t larger = point_t(std::max(xmin, xmax), std::max(ymin,ymax));
   box_t box = box_t(smaller, larger);
 
-  rtree_ptr->query(bgi::intersects(box), std::back_inserter(results));
-  texture_list.resize(results.size());
+  rtree_ptr->query(bgi::intersects(box), std::back_inserter(scene_list));
+  texture_list.resize(scene_list.size());
 
   #pragma omp parallel for schedule(dynamic, 1)
-  for (int i = -1; i < (int)results.size(); ++i) {
+  for (int i = -1; i < (int)scene_list.size(); ++i) {
     if (i == -1)
       memset(tile, 0, sizeof(tile));
     else
-      zxy_read(z, x, y, results[i], texture_list[i]);
+      zxy_read(z, x, y, scene_list[i], texture_list[i]);
   }
 
   zxy_commit(texture_list);
@@ -195,7 +195,7 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
   return;
 }
 
-void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
+void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
 {
   double xmin = std::numeric_limits<double>::max();
   double ymin = std::numeric_limits<double>::max();
@@ -233,7 +233,7 @@ void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
   }
 
   /* Web Mercator to world coordinates */
-  projPJ projection = pj_init_plus(pair.second.proj4);
+  projPJ projection = pj_init_plus(scene.second.proj4);
   pj_transform(webmercator, projection, TILE_SIZE*TILE_SIZE, 1, &(data.xs[0]), &(data.ys[0]), NULL);
   pj_free(projection);
 
@@ -243,7 +243,7 @@ void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
       int index = (i + j*TILE_SIZE);
       double uv[2] = {data.xs[index], data.ys[index]};
 
-      world_to_image(uv, pair.second.transform); // XXX
+      world_to_image(uv, scene.second.transform); // XXX
       data.xs[index] = uv[0];
       data.ys[index] = uv[1];
       xmin = fmin(uv[0], xmin);
@@ -256,7 +256,7 @@ void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
   /* Bounding box of the tile in image coordinates */
   box_t tile_bounding_box = box_t(point_t(round(xmin), round(ymin)), point_t(round(xmax), round(ymax)));
 
-  fetch(pair, tile_bounding_box, data);
+  fetch(scene, tile_bounding_box, data);
 }
 
 void zxy_commit(const std::vector<texture_data> & texture_list)
@@ -279,8 +279,8 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
       for (int i = 0; i <= TILE_SIZE; ++i) { // tile coordinate
         int tile_index = (i + j*TILE_SIZE)*4;
         double x = data.xs[tile_index/4], y = data.ys[tile_index/4]; // scene image coordinates
-        int u = static_cast<int>(round(data.xscale*(x-XMIN(data.location_in_scene)))); // texture coordinate
-        int v = static_cast<int>(round(data.yscale*(y-YMIN(data.location_in_scene)))); // texture coordinate
+        int u = static_cast<int>(round(data.xscale*(x-XMIN(data.bounding_box)))); // texture coordinate
+        int v = static_cast<int>(round(data.yscale*(y-YMIN(data.bounding_box)))); // texture coordinate
 
         if (0 <= u && u < (int)data.texture_width &&
             0 <= v && v < (int)data.texture_height) {
