@@ -40,6 +40,7 @@
 
 #include <boost/geometry/algorithms/intersection.hpp>
 #include <boost/geometry/algorithms/intersects.hpp>
+#include <boost/geometry/algorithms/within.hpp>
 
 #include "ansi.h"
 #include "greater_landsat_scene.h"
@@ -134,38 +135,51 @@ void fetch(const value_t & pair, const box_t & tile_bb, texture_data & data)
   // of the tile bounding box with the image bounding box).
   bg::intersection(tile_bb, image_bb, data.location_in_scene);
 
-  // Open red, green, blue datasets
-  sprintf(pattern, "%s%s", DEFAULT_READ_PREFIX, pair.second.filename);
-  for (int i = 4; i > 1; --i) {
-    sprintf(filename, pattern, i);
-    if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) {
-      fprintf(stderr, ANSI_COLOR_RED "Could not open %s" ANSI_COLOR_RESET "\n", filename);
-      exit(-1);
-    }
-    bands[4-i] = GDALGetRasterBand(handles[4-i], 1);
-  }
-
+  // Compute dimensins and scales
   double w = (XMAX(data.location_in_scene) - XMIN(data.location_in_scene)) * (TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb)));
   double h = (YMAX(data.location_in_scene) - YMIN(data.location_in_scene)) * (TILE_SIZE / (XMAX(tile_bb) - XMIN(tile_bb)));
-  data.texture_width  = std::max(64, static_cast<int>(round(w)));
-  data.texture_height = std::max(64, static_cast<int>(round(h)));
+  data.texture_width  = std::max(SMALL_TILE_SIZE, static_cast<int>(round(w)));
+  data.texture_height = std::max(SMALL_TILE_SIZE, static_cast<int>(round(h)));
   data.xscale = (double)data.texture_width / pair.second.width;
   data.yscale = (double)data.texture_height / pair.second.height;
 
-  // Fetch textures
-  // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
-  for (int i = 0; i < 3; ++i) {
-    data.textures[i] = std::shared_ptr<uint16_t>(new uint16_t[data.texture_width * data.texture_height],
-                                                 [](uint16_t * p){ delete[] p;});
-    if (GDALRasterIO(bands[i],
-                     GF_Read,
-                     static_cast<int>(floor(XMIN(data.location_in_scene))),
-                     static_cast<int>(floor(YMIN(data.location_in_scene))),
-                     static_cast<int>(ceil(XMAX(data.location_in_scene)-XMIN(data.location_in_scene))),
-                     static_cast<int>(ceil(YMAX(data.location_in_scene)-YMIN(data.location_in_scene))),
-                     data.textures[i].get(),
-                     data.texture_width, data.texture_height,
-                     GDT_UInt16, 0, 0)) exit(-1);
+  if (bg::within(image_bb, tile_bb) &&
+      data.texture_width == data.texture_height &&
+      data.texture_width == SMALL_TILE_SIZE) {
+    for (int i = 0; i < 3; ++i)
+      data.textures[i] = static_cast<const uint16_t *>(pair.second.rgb[i]);
+  }
+  else {
+    // Open handles and bands
+    sprintf(pattern, "%s%s", DEFAULT_READ_PREFIX, pair.second.filename);
+    for (int i = 4; i > 1; --i) {
+      sprintf(filename, pattern, i);
+      if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) {
+        fprintf(stderr, ANSI_COLOR_RED "Could not open %s" ANSI_COLOR_RESET "\n", filename);
+        exit(-1);
+      }
+      bands[4-i] = GDALGetRasterBand(handles[4-i], 1);
+    }
+
+    // Fetch textures
+    // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
+    for (int i = 0; i < 3; ++i) {
+      data.textures[i] = std::shared_ptr<uint16_t>(new uint16_t[data.texture_width * data.texture_height],
+                                                   [](uint16_t * p){ delete[] p;});
+      if (GDALRasterIO(bands[i],
+                       GF_Read,
+                       static_cast<int>(floor(XMIN(data.location_in_scene))),
+                       static_cast<int>(floor(YMIN(data.location_in_scene))),
+                       static_cast<int>(ceil(XMAX(data.location_in_scene)-XMIN(data.location_in_scene))),
+                       static_cast<int>(ceil(YMAX(data.location_in_scene)-YMIN(data.location_in_scene))),
+                       std::get<std::shared_ptr<uint16_t>>(data.textures[i]).get(),
+                       data.texture_width, data.texture_height,
+                       GDT_UInt16, 0, 0)) exit(-1);
+    }
+
+    // Close handles
+    for (int i = 0; i < 3; ++i)
+      GDALClose(handles[i]);
   }
 
   return;
@@ -210,7 +224,7 @@ void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
 
   /* Web Mercator to world coordinates */
   projPJ projection = pj_init_plus(pair.second.proj4);
-  pj_transform(webmercator, projection, TILE_SIZE*TILE_SIZE, 1, &data.xs[0], &data.ys[0], NULL);
+  pj_transform(webmercator, projection, TILE_SIZE*TILE_SIZE, 1, &(data.xs[0]), &(data.ys[0]), NULL);
   pj_free(projection);
 
   /* World coordinates to image coordinates */
@@ -237,8 +251,18 @@ void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data)
 
 void zxy_commit(const std::vector<texture_data> & texture_list)
 {
-  for (unsigned int k = 0; k < texture_list.size(); ++k) {
-    const auto data = texture_list[k];
+  for (unsigned int k = 0; k < texture_list.size(); ++k) { // For each scene
+    const texture_data data = texture_list[k];
+    const uint16_t * rgb[3];
+
+    if (std::holds_alternative<const uint16_t *>(data.textures[0])) {
+      for (int i = 0; i < 3; ++i)
+        rgb[i] = std::get<const uint16_t *>(data.textures[i]);
+    }
+    else {
+      for (int i = 0; i < 3; ++i)
+        rgb[i] = std::get<std::shared_ptr<uint16_t>>(data.textures[i]).get();
+    }
 
     // #pragma omp simd collapse(2)
     for (int j = 0; j <= TILE_SIZE; ++j) { // tile coordinate
@@ -253,29 +277,15 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
           int texture_index = u + v*(data.texture_width);
           uint8_t red, byte = 0;
 
-          byte |= red = sigmoidal(data.textures[0].get()[texture_index]);
+          byte |= red = sigmoidal(rgb[0][texture_index]);
           if (tile[tile_index + 3] == 0 /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
-            byte |= tile[tile_index + 1] = sigmoidal(data.textures[1].get()[texture_index]);
-            byte |= tile[tile_index + 2] = sigmoidal(data.textures[2].get()[texture_index]);
+            byte |= tile[tile_index + 1] = sigmoidal(rgb[1][texture_index]);
+            byte |= tile[tile_index + 2] = sigmoidal(rgb[2][texture_index]);
             tile[tile_index + 3] = (byte ? -1 : 0);
           }
         }
-
-        // // if ((0 <= u && u < OVERZOOM*s->tile_window_width) &&
-        // //     (0 <= v && v < OVERZOOM*s->tile_window_height)) {
-        // //   uint8_t red, byte = 0;
-        // //   int texture_index = (u + v*OVERZOOM*s->tile_window_width);
-
-        // //   byte |= red = sigmoidal(s->r_texture[texture_index]);
-        // //   if (tile[tile_index + 3] == 0 || tile[tile_index + 0] < red) { // write into empty pixels
-        // //     tile[tile_index + 0] = red;
-        // //     byte |= tile[tile_index + 1] = sigmoidal(s->g_texture[texture_index]);
-        // //     byte |= tile[tile_index + 2] = sigmoidal(s->b_texture[texture_index]);
-        // //     tile[tile_index + 3] = (byte ? -1 : 0);
-        // //   }
-        // // }
       }
     }
   }
