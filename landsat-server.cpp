@@ -70,6 +70,7 @@ void fetch(const value_t & pair, const box_t & tile_bb, texture_data & data);
 void zxy_commit(const std::vector<texture_data> & data);
 uint8_t sigmoidal(uint16_t _u);
 
+// http://localhost:8001/{z}/{x}/{y}.png
 
 // Global
 void preload(int verbose, void * extra)
@@ -134,24 +135,23 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
   // bounding box with the image (scene) bounding box.
   bg::intersection(tile_bounding_box, image_bounding_box, data.bounding_box);
 
-  // Compute dimensins and scales
-  double w = (XMAX(data.bounding_box) - XMIN(data.bounding_box)) * (TILE_SIZE / (XMAX(tile_bounding_box) - XMIN(tile_bounding_box)));
-  double h = (YMAX(data.bounding_box) - YMIN(data.bounding_box)) * (TILE_SIZE / (XMAX(tile_bounding_box) - XMIN(tile_bounding_box)));
+  // Compute dimensions and scales
+  double texture_bounding_box_width = XMAX(data.bounding_box) - XMIN(data.bounding_box);
+  double texture_bounding_box_height = YMAX(data.bounding_box) - YMIN(data.bounding_box);
+  double tile_bounding_box_width = XMAX(tile_bounding_box) - XMIN(tile_bounding_box);
+  double tile_bounding_box_height = YMAX(tile_bounding_box) - YMIN(tile_bounding_box);
+  double w = TILE_SIZE * (texture_bounding_box_width  / tile_bounding_box_width);
+  double h = TILE_SIZE * (texture_bounding_box_height / tile_bounding_box_height);
+
   data.texture_width  = std::max(SMALL_TILE_SIZE, static_cast<int>(round(w)));
   data.texture_height = std::max(SMALL_TILE_SIZE, static_cast<int>(round(h)));
-  data.xscale = (double)data.texture_width / scene.second.width;
-  data.yscale = (double)data.texture_height / scene.second.height;
+  data.xscale = (double)data.texture_width  / texture_bounding_box_width;
+  data.yscale = (double)data.texture_height / texture_bounding_box_height;
 
   if (((XMIN(data.bounding_box) == XMIN(image_bounding_box) && XMAX(data.bounding_box) == XMAX(image_bounding_box)) ||
        (YMIN(data.bounding_box) == YMIN(image_bounding_box) && YMAX(data.bounding_box) == YMAX(image_bounding_box))) &&
       data.texture_width == data.texture_height &&
       data.texture_width == SMALL_TILE_SIZE) { // If previews are usable
-#if 1
-    fprintf(stderr, ANSI_COLOR_RED "%p | %lf %lf | %lf %lf" ANSI_COLOR_RESET "\n",
-            &scene,
-            XMIN(data.bounding_box), XMAX(data.bounding_box),
-            XMIN(image_bounding_box), XMAX(image_bounding_box));
-#endif
     data.bounding_box = image_bounding_box; // adjust the texture bounding box
     for (int i = 0; i < 3; ++i)
       data.textures[i] = static_cast<const uint16_t *>(scene.second.rgb[i]);
@@ -213,7 +213,7 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   {
     double z2 = pow(2.0, z);
 
-    #pragma omp simd collapse(2)
+    // #pragma omp simd collapse(2)
     for (int j = 0; j < TILE_SIZE; ++j) {
       for ( int i = 0; i < TILE_SIZE; ++i) {
         int index = (i + j*TILE_SIZE);
@@ -262,29 +262,29 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
 void zxy_commit(const std::vector<texture_data> & texture_list)
 {
   for (unsigned int k = 0; k < texture_list.size(); ++k) { // For each scene
-    const texture_data data = texture_list[k];
-    const uint16_t * rgb[3];
+    const auto texture = texture_list[k];
+    const uint16_t * rgb[3] = {nullptr, nullptr, nullptr};
 
-    if (std::holds_alternative<const uint16_t *>(data.textures[0])) {
+    if (std::holds_alternative<const uint16_t *>(texture.textures[0])) {
       for (int i = 0; i < 3; ++i)
-        rgb[i] = std::get<const uint16_t *>(data.textures[i]);
+        rgb[i] = std::get<const uint16_t *>(texture.textures[i]);
     }
-    else {
+    else if (std::holds_alternative<std::shared_ptr<uint16_t>>(texture.textures[0])) {
       for (int i = 0; i < 3; ++i)
-        rgb[i] = std::get<std::shared_ptr<uint16_t>>(data.textures[i]).get();
+        rgb[i] = std::get<std::shared_ptr<uint16_t>>(texture.textures[i]).get();
     }
 
     // #pragma omp simd collapse(2)
     for (int j = 0; j <= TILE_SIZE; ++j) { // tile coordinate
       for (int i = 0; i <= TILE_SIZE; ++i) { // tile coordinate
         int tile_index = (i + j*TILE_SIZE)*4;
-        double x = data.xs[tile_index/4], y = data.ys[tile_index/4]; // scene image coordinates
-        int u = static_cast<int>(round(data.xscale*(x-XMIN(data.bounding_box)))); // texture coordinate
-        int v = static_cast<int>(round(data.yscale*(y-YMIN(data.bounding_box)))); // texture coordinate
+        double x = texture.xs[tile_index/4], y = texture.ys[tile_index/4]; // scene image coordinates
+        int u = static_cast<int>(round(texture.xscale*(x-XMIN(texture.bounding_box)))); // texture coordinate
+        int v = static_cast<int>(round(texture.yscale*(y-YMIN(texture.bounding_box)))); // texture coordinate
 
-        if (0 <= u && u < (int)data.texture_width &&
-            0 <= v && v < (int)data.texture_height) {
-          int texture_index = u + v*(data.texture_width);
+        if (0 <= u && u < (int)texture.texture_width &&
+            0 <= v && v < (int)texture.texture_height) {
+          int texture_index = u + v*(texture.texture_width);
           uint8_t red, byte = 0;
 
           byte |= red = sigmoidal(rgb[0][texture_index]);
