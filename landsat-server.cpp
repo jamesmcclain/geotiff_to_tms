@@ -145,18 +145,22 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
 
   data.texture_width  = std::max(SMALL_TILE_SIZE, static_cast<int>(round(w)));
   data.texture_height = std::max(SMALL_TILE_SIZE, static_cast<int>(round(h)));
-  data.xscale = (double)data.texture_width  / texture_bounding_box_width;
-  data.yscale = (double)data.texture_height / texture_bounding_box_height;
 
   if (((XMIN(data.bounding_box) == XMIN(image_bounding_box) && XMAX(data.bounding_box) == XMAX(image_bounding_box)) ||
        (YMIN(data.bounding_box) == YMIN(image_bounding_box) && YMAX(data.bounding_box) == YMAX(image_bounding_box))) &&
       data.texture_width == data.texture_height &&
-      data.texture_width == SMALL_TILE_SIZE) { // If previews are usable
+      data.texture_width == SMALL_TILE_SIZE) { // If previews are usable ...
+    data.xscale = (double)data.texture_width  / scene.second.width;
+    data.yscale = (double)data.texture_height / scene.second.height;
     data.bounding_box = image_bounding_box; // adjust the texture bounding box
+
     for (int i = 0; i < 3; ++i)
       data.textures[i] = static_cast<const uint16_t *>(scene.second.rgb[i]);
   }
-  else {
+  else { // If previous are not usable ...
+    data.xscale = (double)data.texture_width  / texture_bounding_box_width;
+    data.yscale = (double)data.texture_height / texture_bounding_box_height;
+
     // Open handles and bands
     sprintf(pattern, "%s%s", DEFAULT_READ_PREFIX, scene.second.filename);
     for (int i = 4; i > 1; --i) {
