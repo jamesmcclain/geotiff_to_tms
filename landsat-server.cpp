@@ -107,7 +107,6 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   rtree_ptr->query(bgi::intersects(box), std::back_inserter(scene_list));
   texture_list.resize(scene_list.size());
 
-  #pragma omp parallel for schedule(dynamic, 1)
   for (int i = -1; i < (int)scene_list.size(); ++i) {
     if (i == -1)
       memset(tile, 0, sizeof(tile));
