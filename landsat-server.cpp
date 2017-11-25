@@ -58,6 +58,7 @@ projPJ webmercator = nullptr;
 bi::managed_mapped_file * file = nullptr;
 
 #define MAX_LEN (1<<10)
+#define FUDGE (0.75)
 #define XMIN(b) ((b).min_corner().get<0>())
 #define YMIN(b) ((b).min_corner().get<1>())
 #define XMAX(b) ((b).max_corner().get<0>())
@@ -146,8 +147,10 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
   data.texture_width  = std::max(SMALL_TILE_SIZE, static_cast<int>(round(w)));
   data.texture_height = std::max(SMALL_TILE_SIZE, static_cast<int>(round(h)));
 
-  if (((XMIN(data.bounding_box) == XMIN(image_bounding_box) && XMAX(data.bounding_box) == XMAX(image_bounding_box)) ||
-       (YMIN(data.bounding_box) == YMIN(image_bounding_box) && YMAX(data.bounding_box) == YMAX(image_bounding_box))) &&
+  if (((XMIN(data.bounding_box) == XMIN(image_bounding_box) &&
+        XMAX(data.bounding_box) == XMAX(image_bounding_box)) ||
+       (YMIN(data.bounding_box) == YMIN(image_bounding_box) &&
+        YMAX(data.bounding_box) == YMAX(image_bounding_box))) &&
       data.texture_width == data.texture_height &&
       data.texture_width == SMALL_TILE_SIZE) { // If previews are usable ...
     data.xscale = (double)data.texture_width  / scene.second.width;
@@ -157,9 +160,9 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
     for (int i = 0; i < 3; ++i)
       data.textures[i] = static_cast<const uint16_t *>(scene.second.rgb[i]);
   }
-  else { // If previous are not usable ...
-    data.xscale = (double)data.texture_width  / texture_bounding_box_width;
-    data.yscale = (double)data.texture_height / texture_bounding_box_height;
+  else { // If previews are not usable ...
+    data.xscale = (double)(data.texture_width - FUDGE)/texture_bounding_box_width;
+    data.yscale = (double)(data.texture_height - FUDGE)/texture_bounding_box_height;
 
     // Open handles and bands
     sprintf(pattern, "%s%s", DEFAULT_READ_PREFIX, scene.second.filename);
@@ -217,7 +220,7 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   {
     double z2 = pow(2.0, z);
 
-    // #pragma omp simd collapse(2)
+    #pragma omp simd collapse(2)
     for (int j = 0; j < TILE_SIZE; ++j) {
       for ( int i = 0; i < TILE_SIZE; ++i) {
         int index = (i + j*TILE_SIZE);
@@ -278,7 +281,7 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
         rgb[i] = std::get<std::shared_ptr<uint16_t>>(texture.textures[i]).get();
     }
 
-    // #pragma omp simd collapse(2)
+    #pragma omp simd collapse(2)
     for (int j = 0; j <= TILE_SIZE; ++j) { // tile coordinate
       for (int i = 0; i <= TILE_SIZE; ++i) { // tile coordinate
         int tile_index = (i + j*TILE_SIZE)*4;
