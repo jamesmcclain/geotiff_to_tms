@@ -119,7 +119,6 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   point_t larger = point_t(std::max(xmin, xmax), std::max(ymin,ymax));
   box_t box = box_t(smaller, larger);
 
-  // query(rtree_ptr, box, scene_list);
   rtree_ptr->query(bgi::intersects(box), std::back_inserter(scene_list));
   texture_list.resize(scene_list.size());
 
@@ -192,6 +191,7 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
 
     // Fetch textures
     // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
+    #pragma omp parallel for schedule(static) num_threads(3)
     for (int i = 0; i < 3; ++i) {
       data.textures[i] = std::shared_ptr<uint16_t>(new uint16_t[data.texture_width * data.texture_height],
                                                    [](uint16_t * p){ delete[] p;});
@@ -232,24 +232,23 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
     Source: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
     Source: https://software.intel.com/en-us/node/524530
   */
-  {
-    double z2 = pow(2.0, z);
+  double z2 = pow(2.0, z);
 
-    for (int j = 0; j < TILE_SIZE; ++j) {
-      for ( int i = 0; i < TILE_SIZE; ++i) {
-        int index = (i + j*TILE_SIZE);
-        double u, v;
+  #pragma omp simd collapse(2)
+  for (int j = 0; j < TILE_SIZE; ++j) {
+    for ( int i = 0; i < TILE_SIZE; ++i) {
+      int index = (i + j*TILE_SIZE);
+      double u, v;
 
-        u = x + (i/((double)(TILE_SIZE+1))); // tile space
-        u /= z2;                             // 0-1 scaled, translated Web Mercator
-        u = (2*u - 1) * M_PI * RADIUS;       // Web Mercator
-        data.xs[index] = u;
+      u = x + (i/((double)(TILE_SIZE+1))); // tile space
+      u /= z2;                             // 0-1 scaled, translated Web Mercator
+      u = (2*u - 1) * M_PI * RADIUS;       // Web Mercator
+      data.xs[index] = u;
 
-        v = y + (j/((double)(TILE_SIZE+1))); // tile space
-        v /= z2;                             // 0-1 scaled, translated Web Mercator
-        v = (1 - 2*v) * M_PI * RADIUS;       // Web Mercator
-        data.ys[index] = v;
-      }
+      v = y + (j/((double)(TILE_SIZE+1))); // tile space
+      v /= z2;                             // 0-1 scaled, translated Web Mercator
+      v = (1 - 2*v) * M_PI * RADIUS;       // Web Mercator
+      data.ys[index] = v;
     }
   }
 
@@ -295,6 +294,7 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
         rgb[i] = std::get<std::shared_ptr<uint16_t>>(texture.textures[i]).get();
     }
 
+    #pragma omp simd collapse(2)
     for (int j = 0; j < TILE_SIZE; ++j) { // tile coordinate
       for (int i = 0; i < TILE_SIZE; ++i) { // tile coordinate
         int tile_index = (i + j*TILE_SIZE)*4;
