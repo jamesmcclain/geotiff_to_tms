@@ -33,16 +33,17 @@
 #define __TEXTURES_DATA_HPP__
 
 #include <cstdint>
-#include <vector>
 #include <memory>
+#include <variant>
+#include <vector>
 
 #include "rtree.hpp"
 
 
 struct texture_data {
-  box_t location_in_scene;
+  box_t bounding_box;
   std::vector<double> xs, ys;
-  std::shared_ptr<uint16_t> textures[3];
+  std::variant<std::shared_ptr<uint16_t>, const uint16_t *> textures[3];
   uint32_t texture_width = 0, texture_height = 0;
   double xscale, yscale;
 };

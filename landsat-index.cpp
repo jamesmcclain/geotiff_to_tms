@@ -105,37 +105,54 @@ void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int v
 {
   char * wkt = NULL, * proj4 = NULL;
   OGRSpatialReferenceH srs = NULL;
-  GDALDatasetH dataset;
+  GDALDatasetH handles[3];
   char pattern[MAX_LEN];
   char filename[MAX_LEN];
 
-  // Open the red band of the scene
+  // Open the bands
   sprintf(pattern, "%s%s", prefix, s.filename);
-  sprintf(filename, pattern, 4); // 4 stands for red
-  if (verbose) fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", filename);
-  if ((dataset = GDALOpen(filename, GA_ReadOnly)) == NULL) exit(-1); // XXX
+  for (int i = 0; i < 3; ++ i) {
+    sprintf(filename, pattern, 4-i);
+    if (verbose) fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", filename);
+    if ((handles[i] = GDALOpen(filename, GA_ReadOnly)) == NULL) exit(-1);
+  }
 
   // Get projection
   srs = OSRNewSpatialReference(NULL);
   // This is never freed, but freeing it after OSRImportFromWkt is not
   // valid either.  The problem seems to originate from within GDAL.
   wkt = static_cast<char *>(CPLMalloc(MAX_LEN * sizeof(char)));
-  strncpy(wkt, GDALGetProjectionRef(dataset), MAX_LEN);
+  strncpy(wkt, GDALGetProjectionRef(handles[0]), MAX_LEN);
   OSRImportFromWkt(srs, &wkt);
   OSRExportToProj4(srs, &proj4);
   strncpy(s.proj4, proj4, 1<<8);
 
   // Get transform
-  GDALGetGeoTransform(dataset, s.transform);
+  GDALGetGeoTransform(handles[0], s.transform);
 
   // Get dimensions
-  s.width  = GDALGetRasterXSize(dataset);
-  s.height = GDALGetRasterYSize(dataset);
+  s.width  = GDALGetRasterXSize(handles[0]);
+  s.height = GDALGetRasterYSize(handles[0]);
+
+  // Collect previews
+  for (int i = 0; i < 3; ++i) {
+    GDALRasterBandH band = GDALGetRasterBand(handles[i], 1);
+    int w = GDALGetRasterXSize(handles[i]);
+    int h = GDALGetRasterYSize(handles[i]);
+
+    if (GDALRasterIO(band,
+                     GF_Read,
+                     0, 0, w, h,
+                     &(s.rgb[i]),
+                     SMALL_TILE_SIZE, SMALL_TILE_SIZE,
+                     GDT_UInt16, 0, 0)) exit(-1);
+  }
 
   // Cleanup
   CPLFree(proj4);
   OSRRelease(srs);
-  GDALClose(dataset);
+  for (int i = 0; i < 3; ++i)
+    GDALClose(handles[i]);
 }
 
 int main(int argc, const char ** argv)
@@ -168,7 +185,8 @@ int main(int argc, const char ** argv)
     sscanf(buffer, "%[^,]", product_id);
     sscanf(strstr(buffer, list_prefix) + strlen(list_prefix), "%s", infix);
     *(strstr(infix, POSTFIX)) = '\0';
-    scene_list.push_back(std::make_pair(box_t(point_t(0, 0), point_t(1, 1)), lesser_landsat_scene_struct()));
+    scene_list.push_back(std::make_pair(box_t(point_t(0, 0), point_t(1, 1)),
+                                        lesser_landsat_scene_struct()));
     sprintf(scene_list.back().second.filename, "%s%s_B%%d.TIF", infix, product_id);
   }
   fprintf(stderr, ANSI_COLOR_BLUE "scenes \t\t\t =" ANSI_COLOR_GREEN " %ld" ANSI_COLOR_RESET "\n", scene_list.size());
@@ -184,7 +202,7 @@ int main(int argc, const char ** argv)
   bi::managed_mapped_file file(bi::create_only, indexfile, 1<<order_of_magnitude);
 
   // Build R-Tree
-  // Resource: http://www.boost.org/doc/libs/1_63_0/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
+  // Resource: http://www.boost.org/doc/libs/1_65_0/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
   {
     allocator_t alloc(file.get_segment_manager());
     rtree_t * rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);
