@@ -41,6 +41,6 @@ clean:
 	rm -f *.o
 
 cleaner: clean
-	rm -f landat-index landsat-server
+	rm -f landsat-index landsat-server
 
 cleanest: cleaner
