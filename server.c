@@ -67,9 +67,9 @@ int main(int argc, const char ** argv)
   /* Number of servers to prefork */
   if (argc > 1)
     sscanf(argv[1], "%d", &p);
-  fprintf(stderr, ANSI_COLOR_BLUE "P = %d" ANSI_COLOR_RESET "\n", p);
+  fprintf(stderr, ANSI_COLOR_BLUE "P\t\t = " ANSI_COLOR_GREEN "%d" ANSI_COLOR_RESET "\n", p);
 
-#if 0
+#if 1
   preload(1, NULL);
   load(1, NULL);
   int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);

@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <memory>
 
@@ -57,8 +58,9 @@ rtree_t * rtree_ptr = nullptr;
 projPJ webmercator = nullptr;
 bi::managed_mapped_file * file = nullptr;
 
-#define MAX_LEN (1<<10)
 #define FUDGE (0.75)
+#define ENV_INDEX "TMS_INDEX"
+#define ENV_PREFIX "TMS_PREFIX"
 #define XMIN(b) ((b).min_corner().get<0>())
 #define YMIN(b) ((b).min_corner().get<1>())
 #define XMAX(b) ((b).max_corner().get<0>())
@@ -76,10 +78,27 @@ uint8_t sigmoidal(uint16_t _u);
 // Global
 void preload(int verbose, void * extra)
 {
+  const char * variable = nullptr;
+
   GDALAllRegister();
 
-  indexfile = DEFAULT_INDEXFILE;
-  prefix = DEFAULT_READ_PREFIX;
+  // index file
+  variable = std::getenv(ENV_INDEX);
+  if (variable)
+    indexfile = variable;
+  else
+    indexfile = DEFAULT_INDEXFILE;
+
+  // prefix
+  variable = std::getenv(ENV_PREFIX);
+  if (variable)
+    prefix = variable;
+  else
+    prefix = DEFAULT_READ_PREFIX;
+
+  fprintf(stderr, ANSI_COLOR_BLUE "index file\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", indexfile);
+  fprintf(stderr, ANSI_COLOR_BLUE "prefix\t\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", prefix);
+
   webmercator = pj_init_plus(WEBMERCATOR);
 
   file = new bi::managed_mapped_file(bi::open_only, indexfile);
@@ -122,8 +141,8 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
 {
   GDALDatasetH handles[3];
   GDALRasterBandH bands[3];
-  char pattern[MAX_LEN];
-  char filename[MAX_LEN];
+  char pattern[STRING_LEN];
+  char filename[STRING_LEN];
 
   box_t image_bounding_box = box_t(point_t(0, 0), point_t(scene.second.width-1, scene.second.height-1));
 
@@ -164,7 +183,7 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
     data.yscale = (double)(data.texture_height - FUDGE)/texture_bounding_box_height;
 
     // Open handles and bands
-    sprintf(pattern, "%s%s", DEFAULT_READ_PREFIX, scene.second.filename);
+    sprintf(pattern, "%s%s", prefix, scene.second.filename);
     for (int i = 4; i > 1; --i) {
       sprintf(filename, pattern, i);
       if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) {
