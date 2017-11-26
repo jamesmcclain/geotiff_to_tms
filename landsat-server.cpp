@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <memory>
 
@@ -48,21 +49,18 @@
 #include "pngwrite.h"
 #include "projection.h"
 
-#include "textures.hpp"
 #include "rtree.hpp"
+#include "textures.hpp"
 
 const char * indexfile = nullptr;
 const char * prefix = nullptr;
-rtree_t * rtree_ptr = nullptr;
+const rtree_t * rtree_ptr = nullptr;
 projPJ webmercator = nullptr;
 bi::managed_mapped_file * file = nullptr;
 
-#define MAX_LEN (1<<10)
 #define FUDGE (0.75)
-#define XMIN(b) ((b).min_corner().get<0>())
-#define YMIN(b) ((b).min_corner().get<1>())
-#define XMAX(b) ((b).max_corner().get<0>())
-#define YMAX(b) ((b).max_corner().get<1>())
+#define ENV_INDEX "TMS_INDEX"
+#define ENV_PREFIX "TMS_PREFIX"
 
 uint8_t tile[TILE_SIZE2*4]; // RGBA ergo 4
 
@@ -76,10 +74,27 @@ uint8_t sigmoidal(uint16_t _u);
 // Global
 void preload(int verbose, void * extra)
 {
+  const char * variable = nullptr;
+
   GDALAllRegister();
 
-  indexfile = DEFAULT_INDEXFILE;
-  prefix = DEFAULT_READ_PREFIX;
+  // index file
+  variable = std::getenv(ENV_INDEX);
+  if (variable)
+    indexfile = variable;
+  else
+    indexfile = DEFAULT_INDEXFILE;
+
+  // prefix
+  variable = std::getenv(ENV_PREFIX);
+  if (variable)
+    prefix = variable;
+  else
+    prefix = DEFAULT_READ_PREFIX;
+
+  fprintf(stderr, ANSI_COLOR_BLUE "index file\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", indexfile);
+  fprintf(stderr, ANSI_COLOR_BLUE "prefix\t\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", prefix);
+
   webmercator = pj_init_plus(WEBMERCATOR);
 
   file = new bi::managed_mapped_file(bi::open_only, indexfile);
@@ -122,8 +137,8 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
 {
   GDALDatasetH handles[3];
   GDALRasterBandH bands[3];
-  char pattern[MAX_LEN];
-  char filename[MAX_LEN];
+  char pattern[STRING_LEN];
+  char filename[STRING_LEN];
 
   box_t image_bounding_box = box_t(point_t(0, 0), point_t(scene.second.width-1, scene.second.height-1));
 
@@ -164,7 +179,7 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
     data.yscale = (double)(data.texture_height - FUDGE)/texture_bounding_box_height;
 
     // Open handles and bands
-    sprintf(pattern, "%s%s", DEFAULT_READ_PREFIX, scene.second.filename);
+    sprintf(pattern, "%s%s", prefix, scene.second.filename);
     for (int i = 4; i > 1; --i) {
       sprintf(filename, pattern, i);
       if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) {
@@ -176,6 +191,7 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
 
     // Fetch textures
     // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
+    #pragma omp parallel for schedule(static) num_threads(3)
     for (int i = 0; i < 3; ++i) {
       data.textures[i] = std::shared_ptr<uint16_t>(new uint16_t[data.texture_width * data.texture_height],
                                                    [](uint16_t * p){ delete[] p;});
@@ -216,25 +232,23 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
     Source: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
     Source: https://software.intel.com/en-us/node/524530
   */
-  {
-    double z2 = pow(2.0, z);
+  double z2 = pow(2.0, z);
 
-    #pragma omp simd collapse(2)
-    for (int j = 0; j < TILE_SIZE; ++j) {
-      for ( int i = 0; i < TILE_SIZE; ++i) {
-        int index = (i + j*TILE_SIZE);
-        double u, v;
+  #pragma omp simd collapse(2)
+  for (int j = 0; j < TILE_SIZE; ++j) {
+    for ( int i = 0; i < TILE_SIZE; ++i) {
+      int index = (i + j*TILE_SIZE);
+      double u, v;
 
-        u = x + (i/((double)(TILE_SIZE+1))); // tile space
-        u /= z2;                             // 0-1 scaled, translated Web Mercator
-        u = (2*u - 1) * M_PI * RADIUS;       // Web Mercator
-        data.xs[index] = u;
+      u = x + (i/((double)(TILE_SIZE+1))); // tile space
+      u /= z2;                             // 0-1 scaled, translated Web Mercator
+      u = (2*u - 1) * M_PI * RADIUS;       // Web Mercator
+      data.xs[index] = u;
 
-        v = y + (j/((double)(TILE_SIZE+1))); // tile space
-        v /= z2;                             // 0-1 scaled, translated Web Mercator
-        v = (1 - 2*v) * M_PI * RADIUS;       // Web Mercator
-        data.ys[index] = v;
-      }
+      v = y + (j/((double)(TILE_SIZE+1))); // tile space
+      v /= z2;                             // 0-1 scaled, translated Web Mercator
+      v = (1 - 2*v) * M_PI * RADIUS;       // Web Mercator
+      data.ys[index] = v;
     }
   }
 
@@ -260,7 +274,8 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   }
 
   /* Bounding box of the tile in image coordinates */
-  box_t tile_bounding_box = box_t(point_t(round(xmin), round(ymin)), point_t(round(xmax), round(ymax)));
+  box_t tile_bounding_box = box_t(point_t(floor(xmin), floor(ymin)),
+                                  point_t(ceil(xmax), ceil(ymax)));
 
   fetch(scene, tile_bounding_box, data);
 }
@@ -281,15 +296,15 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
     }
 
     #pragma omp simd collapse(2)
-    for (int j = 0; j <= TILE_SIZE; ++j) { // tile coordinate
-      for (int i = 0; i <= TILE_SIZE; ++i) { // tile coordinate
+    for (int j = 0; j < TILE_SIZE; ++j) { // tile coordinate
+      for (int i = 0; i < TILE_SIZE; ++i) { // tile coordinate
         int tile_index = (i + j*TILE_SIZE)*4;
         double x = texture.xs[tile_index/4], y = texture.ys[tile_index/4]; // scene image coordinates
         int u = static_cast<int>(round(texture.xscale*(x-XMIN(texture.bounding_box)))); // texture coordinate
         int v = static_cast<int>(round(texture.yscale*(y-YMIN(texture.bounding_box)))); // texture coordinate
 
-        if (0 <= u && u < (int)texture.texture_width &&
-            0 <= v && v < (int)texture.texture_height) {
+        if (0 <= u && u < static_cast<int>(texture.texture_width) &&
+            0 <= v && v < static_cast<int>(texture.texture_height)) {
           int texture_index = u + v*(texture.texture_width);
           uint8_t red, byte = 0;
 

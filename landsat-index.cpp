@@ -106,8 +106,8 @@ void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int v
   char * wkt = NULL, * proj4 = NULL;
   OGRSpatialReferenceH srs = NULL;
   GDALDatasetH handles[3];
-  char pattern[MAX_LEN];
-  char filename[MAX_LEN];
+  char pattern[STRING_LEN];
+  char filename[STRING_LEN];
 
   // Open the bands
   sprintf(pattern, "%s%s", prefix, s.filename);
@@ -121,8 +121,8 @@ void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int v
   srs = OSRNewSpatialReference(NULL);
   // This is never freed, but freeing it after OSRImportFromWkt is not
   // valid either.  The problem seems to originate from within GDAL.
-  wkt = static_cast<char *>(CPLMalloc(MAX_LEN * sizeof(char)));
-  strncpy(wkt, GDALGetProjectionRef(handles[0]), MAX_LEN);
+  wkt = static_cast<char *>(CPLMalloc(STRING_LEN * sizeof(char)));
+  strncpy(wkt, GDALGetProjectionRef(handles[0]), STRING_LEN);
   OSRImportFromWkt(srs, &wkt);
   OSRExportToProj4(srs, &proj4);
   strncpy(s.proj4, proj4, 1<<8);
@@ -158,9 +158,9 @@ void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int v
 int main(int argc, const char ** argv)
 {
   std::vector<value_t> scene_list;
-  char buffer[MAX_LEN];
-  char product_id[MAX_LEN];
-  char infix[MAX_LEN];
+  char buffer[STRING_LEN];
+  char product_id[STRING_LEN];
+  char infix[STRING_LEN];
   const char * list_prefix = DEFAULT_LIST_PREFIX;
   const char * read_prefix = DEFAULT_READ_PREFIX;
   const char * indexfile = DEFAULT_INDEXFILE;
@@ -181,7 +181,7 @@ int main(int argc, const char ** argv)
   GDALAllRegister();
 
   // Read the scene list
-  while (fgets(buffer, MAX_LEN, stdin) != NULL) {
+  while (fgets(buffer, STRING_LEN, stdin) != NULL) {
     sscanf(buffer, "%[^,]", product_id);
     sscanf(strstr(buffer, list_prefix) + strlen(list_prefix), "%s", infix);
     *(strstr(infix, POSTFIX)) = '\0';
@@ -202,7 +202,7 @@ int main(int argc, const char ** argv)
   bi::managed_mapped_file file(bi::create_only, indexfile, 1<<order_of_magnitude);
 
   // Build R-Tree
-  // Resource: http://www.boost.org/doc/libs/1_65_0/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
+  // Resource: http://www.boost.org/doc/libs/1_65_1/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
   {
     allocator_t alloc(file.get_segment_manager());
     rtree_t * rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);

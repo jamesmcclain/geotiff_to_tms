@@ -36,13 +36,9 @@
 
 #include "constants.h"
 
-#define DEFAULT_INDEXFILE "/tmp/index.data"
-#define DEFAULT_LIST_PREFIX "https://s3-us-west-2.amazonaws.com/landsat-pds/"
-#define DEFAULT_READ_PREFIX "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
-#define MAX_LEN (1<<10)
 
-
-struct __attribute__((__packed__)) lesser_landsat_scene_struct {
+class lesser_landsat_scene_struct {
+ public:
   char filename[1<<8];
   char proj4[1<<8];
   double transform[6];

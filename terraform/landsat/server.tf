@@ -21,22 +21,17 @@ variable "instance_type" {
   default     = "t2.micro"
 }
 
+variable "tms_cidr" {
+  type        = "string"
+  description = "The CIDR block from which web connections are allowed"
+  default     = "0.0.0.0/0"
+}
+
 provider "aws" {
   region = "${var.region}"
 }
 
-resource "aws_instance" "landsat" {
-  ami             = "${var.ami}"
-  instance_type   = "${var.instance_type}"
-  key_name        = "${var.key_name}"
-  security_groups = ["${aws_security_group.landsat.name}"]
-
-  tags {
-    Name = "LandSat"
-  }
-}
-
-resource "aws_security_group" "landsat" {
+resource "aws_security_group" "tms" {
 
   ingress {
     from_port   = "22"
@@ -49,7 +44,7 @@ resource "aws_security_group" "landsat" {
     from_port   = "8001"
     to_port     = "8001"
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["${var.tms_cidr}"]
   }
 
   egress {
@@ -64,6 +59,18 @@ resource "aws_security_group" "landsat" {
   }
 }
 
+resource "aws_instance" "tms" {
+  ami             = "${var.ami}"
+  instance_type   = "${var.instance_type}"
+  key_name        = "${var.key_name}"
+  security_groups = ["${aws_security_group.tms.name}"]
+
+  tags {
+    Name = "TMS"
+  }
+}
+
+
 output "emr-master" {
-  value = "${aws_instance.landsat.public_dns}"
+  value = "${aws_instance.tms.public_dns}"
 }

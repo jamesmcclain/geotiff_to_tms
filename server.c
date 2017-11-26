@@ -67,7 +67,7 @@ int main(int argc, const char ** argv)
   /* Number of servers to prefork */
   if (argc > 1)
     sscanf(argv[1], "%d", &p);
-  fprintf(stderr, ANSI_COLOR_BLUE "P = %d" ANSI_COLOR_RESET "\n", p);
+  fprintf(stderr, ANSI_COLOR_BLUE "P\t\t = " ANSI_COLOR_GREEN "%d" ANSI_COLOR_RESET "\n", p);
 
 #if 0
   preload(1, NULL);
@@ -75,7 +75,8 @@ int main(int argc, const char ** argv)
   int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
   /* zxy(fd, 2, 2, 1, 1, NULL); */
   /* zxy(fd, 4, 11, 6, 1, NULL); */
-  zxy(fd, 7, 94, 55, 1, NULL);
+  /* zxy(fd, 7, 94, 55, 1, NULL); */
+  zxy(fd, 16, 48705, 28528, 1, NULL);
   fsync(fd); shutdown(fd, SHUT_RDWR); close(fd);
 #else
   /* Create socket */
