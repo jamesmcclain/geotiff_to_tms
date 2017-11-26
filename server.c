@@ -75,7 +75,8 @@ int main(int argc, const char ** argv)
   int fd = open("/tmp/tile.png", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
   /* zxy(fd, 2, 2, 1, 1, NULL); */
   /* zxy(fd, 4, 11, 6, 1, NULL); */
-  zxy(fd, 7, 94, 55, 1, NULL);
+  /* zxy(fd, 7, 94, 55, 1, NULL); */
+  zxy(fd, 16, 48705, 28528, 1, NULL);
   fsync(fd); shutdown(fd, SHUT_RDWR); close(fd);
 #else
   /* Create socket */

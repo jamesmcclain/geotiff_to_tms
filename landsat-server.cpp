@@ -274,7 +274,8 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   }
 
   /* Bounding box of the tile in image coordinates */
-  box_t tile_bounding_box = box_t(point_t(round(xmin), round(ymin)), point_t(round(xmax), round(ymax)));
+  box_t tile_bounding_box = box_t(point_t(floor(xmin), floor(ymin)),
+                                  point_t(ceil(xmax), ceil(ymax)));
 
   fetch(scene, tile_bounding_box, data);
 }
@@ -302,8 +303,8 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
         int u = static_cast<int>(round(texture.xscale*(x-XMIN(texture.bounding_box)))); // texture coordinate
         int v = static_cast<int>(round(texture.yscale*(y-YMIN(texture.bounding_box)))); // texture coordinate
 
-        if (0 <= u && u < (int)texture.texture_width &&
-            0 <= v && v < (int)texture.texture_height) {
+        if (0 <= u && u < static_cast<int>(texture.texture_width) &&
+            0 <= v && v < static_cast<int>(texture.texture_height)) {
           int texture_index = u + v*(texture.texture_width);
           uint8_t red, byte = 0;
 
