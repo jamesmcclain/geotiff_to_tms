@@ -238,7 +238,6 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   {
     double z2 = pow(2.0, z);
 
-    #pragma omp simd collapse(2)
     for (int j = 0; j < TILE_SIZE; ++j) {
       for ( int i = 0; i < TILE_SIZE; ++i) {
         int index = (i + j*TILE_SIZE);
@@ -299,7 +298,6 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
         rgb[i] = std::get<std::shared_ptr<uint16_t>>(texture.textures[i]).get();
     }
 
-    #pragma omp simd collapse(2)
     for (int j = 0; j <= TILE_SIZE; ++j) { // tile coordinate
       for (int i = 0; i <= TILE_SIZE; ++i) { // tile coordinate
         int tile_index = (i + j*TILE_SIZE)*4;
