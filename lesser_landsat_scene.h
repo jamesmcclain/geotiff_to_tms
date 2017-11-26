@@ -37,7 +37,8 @@
 #include "constants.h"
 
 
-struct __attribute__((__packed__)) lesser_landsat_scene_struct {
+class lesser_landsat_scene_struct {
+ public:
   char filename[1<<8];
   char proj4[1<<8];
   double transform[6];

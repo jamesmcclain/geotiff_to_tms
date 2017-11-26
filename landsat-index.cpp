@@ -202,7 +202,7 @@ int main(int argc, const char ** argv)
   bi::managed_mapped_file file(bi::create_only, indexfile, 1<<order_of_magnitude);
 
   // Build R-Tree
-  // Resource: http://www.boost.org/doc/libs/1_65_0/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
+  // Resource: http://www.boost.org/doc/libs/1_65_1/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
   {
     allocator_t alloc(file.get_segment_manager());
     rtree_t * rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);

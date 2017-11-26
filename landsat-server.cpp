@@ -49,22 +49,18 @@
 #include "pngwrite.h"
 #include "projection.h"
 
-#include "textures.hpp"
 #include "rtree.hpp"
+#include "textures.hpp"
 
 const char * indexfile = nullptr;
 const char * prefix = nullptr;
-rtree_t * rtree_ptr = nullptr;
+const rtree_t * rtree_ptr = nullptr;
 projPJ webmercator = nullptr;
 bi::managed_mapped_file * file = nullptr;
 
 #define FUDGE (0.75)
 #define ENV_INDEX "TMS_INDEX"
 #define ENV_PREFIX "TMS_PREFIX"
-#define XMIN(b) ((b).min_corner().get<0>())
-#define YMIN(b) ((b).min_corner().get<1>())
-#define XMAX(b) ((b).max_corner().get<0>())
-#define YMAX(b) ((b).max_corner().get<1>())
 
 uint8_t tile[TILE_SIZE2*4]; // RGBA ergo 4
 
@@ -123,6 +119,7 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   point_t larger = point_t(std::max(xmin, xmax), std::max(ymin,ymax));
   box_t box = box_t(smaller, larger);
 
+  // query(rtree_ptr, box, scene_list);
   rtree_ptr->query(bgi::intersects(box), std::back_inserter(scene_list));
   texture_list.resize(scene_list.size());
 
@@ -298,8 +295,8 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
         rgb[i] = std::get<std::shared_ptr<uint16_t>>(texture.textures[i]).get();
     }
 
-    for (int j = 0; j <= TILE_SIZE; ++j) { // tile coordinate
-      for (int i = 0; i <= TILE_SIZE; ++i) { // tile coordinate
+    for (int j = 0; j < TILE_SIZE; ++j) { // tile coordinate
+      for (int i = 0; i < TILE_SIZE; ++i) { // tile coordinate
         int tile_index = (i + j*TILE_SIZE)*4;
         double x = texture.xs[tile_index/4], y = texture.ys[tile_index/4]; // scene image coordinates
         int u = static_cast<int>(round(texture.xscale*(x-XMIN(texture.bounding_box)))); // texture coordinate
