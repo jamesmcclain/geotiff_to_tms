@@ -32,8 +32,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
-#include <cmath>
 #include <cstring>
+#include <algorithm>
 #include <limits>
 #include <memory>
 
@@ -41,6 +41,7 @@
 
 #include <boost/geometry/algorithms/intersection.hpp>
 #include <boost/geometry/algorithms/intersects.hpp>
+#include <boost/math/constants/constants.hpp>
 
 #include "ansi.h"
 #include "greater_landsat_scene.h"
@@ -54,6 +55,7 @@
 
 const char * indexfile = nullptr;
 const char * prefix = nullptr;
+const double pi = boost::math::constants::pi<double>();
 const rtree_t * rtree_ptr = nullptr;
 projPJ webmercator = nullptr;
 bi::managed_mapped_file * file = nullptr;
@@ -111,10 +113,10 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   std::vector<value_t> scene_list;
   std::vector<texture_data> texture_list;
   double z2 = pow(2.0, z);
-  double xmin = (2*((x+0) / z2) - 1) * M_PI * RADIUS;
-  double xmax = (2*((x+1) / z2) - 1) * M_PI * RADIUS;
-  double ymin = (1 - 2*((y+0) / z2)) * M_PI * RADIUS;
-  double ymax = (1 - 2*((y+1) / z2)) * M_PI * RADIUS;
+  double xmin = (2*((x+0) / z2) - 1) * pi * RADIUS;
+  double xmax = (2*((x+1) / z2) - 1) * pi * RADIUS;
+  double ymin = (1 - 2*((y+0) / z2)) * pi * RADIUS;
+  double ymax = (1 - 2*((y+1) / z2)) * pi * RADIUS;
   point_t smaller = point_t(std::min(xmin, xmax), std::min(ymin,ymax));
   point_t larger = point_t(std::max(xmin, xmax), std::max(ymin,ymax));
   box_t box = box_t(smaller, larger);
@@ -158,8 +160,8 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
   double w = TILE_SIZE * (texture_bounding_box_width  / tile_bounding_box_width);
   double h = TILE_SIZE * (texture_bounding_box_height / tile_bounding_box_height);
 
-  data.texture_width  = std::max(SMALL_TILE_SIZE, static_cast<int>(round(w)));
-  data.texture_height = std::max(SMALL_TILE_SIZE, static_cast<int>(round(h)));
+  data.texture_width  = std::max(SMALL_TILE_SIZE, static_cast<int>(std::round(w)));
+  data.texture_height = std::max(SMALL_TILE_SIZE, static_cast<int>(std::round(h)));
 
   if (((XMIN(data.bounding_box) == XMIN(image_bounding_box) &&
         XMAX(data.bounding_box) == XMAX(image_bounding_box)) ||
@@ -197,10 +199,10 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
                                                    [](uint16_t * p){ delete[] p;});
       if (GDALRasterIO(bands[i],
                        GF_Read,
-                       static_cast<int>(floor(XMIN(data.bounding_box))),
-                       static_cast<int>(floor(YMIN(data.bounding_box))),
-                       static_cast<int>(ceil(XMAX(data.bounding_box)-XMIN(data.bounding_box))),
-                       static_cast<int>(ceil(YMAX(data.bounding_box)-YMIN(data.bounding_box))),
+                       static_cast<int>(std::floor(XMIN(data.bounding_box))),
+                       static_cast<int>(std::floor(YMIN(data.bounding_box))),
+                       static_cast<int>(std::ceil(XMAX(data.bounding_box)-XMIN(data.bounding_box))),
+                       static_cast<int>(std::ceil(YMAX(data.bounding_box)-YMIN(data.bounding_box))),
                        std::get<std::shared_ptr<uint16_t>>(data.textures[i]).get(),
                        data.texture_width, data.texture_height,
                        GDT_UInt16, 0, 0)) {
@@ -219,10 +221,7 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
 
 void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
 {
-  double xmin = std::numeric_limits<double>::max();
-  double ymin = std::numeric_limits<double>::max();
-  double xmax = std::numeric_limits<double>::min();
-  double ymax = std::numeric_limits<double>::min();
+  double xmin, xmax, ymin, ymax;
 
   data.xs.resize(TILE_SIZE * TILE_SIZE);
   data.ys.resize(TILE_SIZE * TILE_SIZE);
@@ -242,12 +241,12 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
 
       u = x + (i/((double)(TILE_SIZE+1))); // tile space
       u /= z2;                             // 0-1 scaled, translated Web Mercator
-      u = (2*u - 1) * M_PI * RADIUS;       // Web Mercator
+      u = (2*u - 1) * pi * RADIUS;         // Web Mercator
       data.xs[index] = u;
 
       v = y + (j/((double)(TILE_SIZE+1))); // tile space
       v /= z2;                             // 0-1 scaled, translated Web Mercator
-      v = (1 - 2*v) * M_PI * RADIUS;       // Web Mercator
+      v = (1 - 2*v) * pi * RADIUS;         // Web Mercator
       data.ys[index] = v;
     }
   }
@@ -263,16 +262,16 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
       int index = (i + j*TILE_SIZE);
 
       world_to_image(&data.xs[index], &data.ys[index], scene.second.transform);
-      xmin = fmin(data.xs[index], xmin);
-      xmax = fmax(data.xs[index], xmax);
-      ymin = fmin(data.ys[index], ymin);
-      ymax = fmax(data.ys[index], ymax);
     }
   }
+  xmin = *std::min_element(std::begin(data.xs), std::end(data.xs));
+  xmax = *std::max_element(std::begin(data.xs), std::end(data.xs));
+  ymin = *std::min_element(std::begin(data.ys), std::end(data.ys));
+  ymax = *std::max_element(std::begin(data.ys), std::end(data.ys));
 
   /* Bounding box of the tile in image coordinates */
-  box_t tile_bounding_box = box_t(point_t(floor(xmin), floor(ymin)),
-                                  point_t(ceil(xmax), ceil(ymax)));
+  box_t tile_bounding_box = box_t(point_t(std::floor(xmin), std::floor(ymin)),
+                                  point_t(std::ceil(xmax), std::ceil(ymax)));
 
   fetch(scene, tile_bounding_box, data);
 }
@@ -297,8 +296,8 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
       for (int i = 0; i < TILE_SIZE; ++i) { // tile coordinate
         int tile_index = (i + j*TILE_SIZE)*4;
         double x = texture.xs[tile_index/4], y = texture.ys[tile_index/4]; // scene image coordinates
-        int u = static_cast<int>(round(texture.xscale*(x-XMIN(texture.bounding_box)))); // texture coordinate
-        int v = static_cast<int>(round(texture.yscale*(y-YMIN(texture.bounding_box)))); // texture coordinate
+        int u = static_cast<int>(std::round(texture.xscale*(x-XMIN(texture.bounding_box)))); // texture coordinate
+        int v = static_cast<int>(std::round(texture.yscale*(y-YMIN(texture.bounding_box)))); // texture coordinate
 
         if (0 <= u && u < static_cast<int>(texture.texture_width) &&
             0 <= v && v < static_cast<int>(texture.texture_height)) {
@@ -327,6 +326,6 @@ uint8_t sigmoidal(uint16_t _u)
   double beta = 10, alpha = 0.50;
   double numer = 1/(1+exp(beta*(alpha-u))) - 1/(1+exp(beta));
   double denom = 1/(1+exp(beta*(alpha-1))) - 1/(1+exp(beta*alpha));
-  double gu = fmax(0.0, fmin(1.0, numer / denom));
+  double gu = std::max(0.0, std::min(1.0, numer / denom));
   return ((1<<8)-1)*gu;
 }
