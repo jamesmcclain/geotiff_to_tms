@@ -37,8 +37,21 @@
 extern "C" {
 #endif
 
-  void image_to_world(double * xy, const double * transform);
-  void world_to_image(double * xy, const double * transform);
+  void inline image_to_world(double * __restrict__ x, double * __restrict__ y, const double * __restrict__ transform)
+  {
+    // Source: http://www.gdal.org/classGDALDataset.html#a5101119705f5fa2bc1344ab26f66fd1d
+    double image_x = *x, image_y = *y;
+    *x = transform[0] + image_x*transform[1] + image_y*transform[2];
+    *y = transform[3] + image_x*transform[4] + image_y*transform[5];
+  }
+
+  void inline world_to_image(double * __restrict__ x, double * __restrict__ y, const double * __restrict__ transform)
+  {
+    // Source: http://www.gdal.org/classGDALDataset.html#a5101119705f5fa2bc1344ab26f66fd1d
+    double world_x = *x, world_y = *y;
+    *x = (-world_x*transform[5] + world_y*transform[2] + transform[0]*transform[5] - transform[2]*transform[3])/(transform[2]*transform[4] - transform[1]*transform[5]);
+    *y = ( world_x*transform[4] - world_y*transform[1] + transform[0]*transform[4] + transform[1]*transform[3])/(transform[2]*transform[4] - transform[1]*transform[5]);
+  }
 
 #ifdef __cplusplus
 }

@@ -32,7 +32,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cmath>
+#include <algorithm>
 
 #include "gdal.h"
 #include "cpl_conv.h"
@@ -54,51 +54,58 @@ projPJ webmercator_pj = NULL;
 
 void bounding_box(std::pair<box_t, lesser_landsat_scene_struct> & pair)
 {
-  double xmin = DBL_MAX;
-  double ymin = DBL_MAX;
-  double xmax = DBL_MIN;
-  double ymax = DBL_MIN;
-  double * t = static_cast<double *>(calloc(INCREMENTS, 2*sizeof(double)));
-  double * b = static_cast<double *>(calloc(INCREMENTS, 2*sizeof(double)));
-  double * l = static_cast<double *>(calloc(INCREMENTS, 2*sizeof(double)));
-  double * r = static_cast<double *>(calloc(INCREMENTS, 2*sizeof(double)));
+  double xmin, xmax, ymin, ymax;
+  std::vector<double> t_x = std::vector<double>(INCREMENTS);
+  std::vector<double> t_y = std::vector<double>(INCREMENTS);
+  std::vector<double> b_x = std::vector<double>(INCREMENTS);
+  std::vector<double> b_y = std::vector<double>(INCREMENTS);
+  std::vector<double> l_x = std::vector<double>(INCREMENTS);
+  std::vector<double> l_y = std::vector<double>(INCREMENTS);
+  std::vector<double> r_x = std::vector<double>(INCREMENTS);
+  std::vector<double> r_y = std::vector<double>(INCREMENTS);
   projPJ projection_pj = NULL;
 
   // Get world coordinates around the periphery
+  #pragma omp simd
   for (int i = 0; i < INCREMENTS; ++i) {
-    t[2*i + 0] = b[2*i + 0] = 0.5 + static_cast<double>(i*pair.second.width)/INCREMENTS;  // x values across the top and bottom
-    t[2*i + 1] = l[2*i + 0] = 0.0;                                                        // y values across the top and x values on the left// XXX
-    b[2*i + 1] = static_cast<double>(pair.second.height);                                 // y values across the bottom
-    r[2*i + 0] = static_cast<double>(pair.second.width);                                  // x values on the right
-    l[2*i + 1] = r[2*i + 1] = 0.5 + static_cast<double>(i*pair.second.height)/INCREMENTS; // y values on the left and right
+    t_x[i] = b_x[i] = 0.5 + static_cast<double>(i*pair.second.width)/INCREMENTS;  // x values across the top and bottom
+    t_y[i] = l_x[i] = 0.5;                                                        // y values across the top and x values on the left
+    b_y[i] = 0.5 + static_cast<double>(pair.second.height);                       // y values across the bottom
+    r_x[i] = 0.5 + static_cast<double>(pair.second.width);                        // x values on the right
+    l_y[i] = r_y[i] = 0.5 + static_cast<double>(i*pair.second.height)/INCREMENTS; // y values on the left and right
 
-    image_to_world(t + 2*i, pair.second.transform);
-    image_to_world(b + 2*i, pair.second.transform);
-    image_to_world(l + 2*i, pair.second.transform);
-    image_to_world(r + 2*i, pair.second.transform);
+    image_to_world(&t_x[i], &t_y[i], pair.second.transform);
+    image_to_world(&b_x[i], &b_y[i], pair.second.transform);
+    image_to_world(&l_x[i], &l_y[i], pair.second.transform);
+    image_to_world(&r_x[i], &r_y[i], pair.second.transform);
   }
 
   // Get WebMercator coordinates
   projection_pj = pj_init_plus(pair.second.proj4);
-  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 2, t+0, t+1, NULL);
-  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 2, b+0, b+1, NULL);
-  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 2, l+0, l+1, NULL);
-  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 2, r+0, r+1, NULL);
+  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 1, &t_x[0], &t_y[0], NULL);
+  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 1, &b_x[0], &b_y[0], NULL);
+  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 1, &l_x[0], &l_y[0], NULL);
+  pj_transform(projection_pj, webmercator_pj, INCREMENTS, 1, &r_x[0], &r_y[0], NULL);
   pj_free(projection_pj);
 
   // Get WebMercator bounding box
-  for (int i = 0; i < INCREMENTS; ++i) {
-    xmin = fmin(r[2*i + 0], fmin(l[2*i + 0], fmin(b[2*i + 0], fmin(t[2*i + 0], xmin))));
-    xmax = fmax(r[2*i + 0], fmax(l[2*i + 0], fmax(b[2*i + 0], fmax(t[2*i + 0], xmax))));
-    ymin = fmin(r[2*i + 1], fmin(l[2*i + 1], fmin(b[2*i + 1], fmin(t[2*i + 1], ymin))));
-    ymax = fmax(r[2*i + 1], fmax(l[2*i + 1], fmax(b[2*i + 1], fmax(t[2*i + 1], ymax))));
-  }
+  xmin = std::min(*std::min_element(std::begin(r_x), std::end(r_x)),
+                  std::min(*std::min_element(std::begin(l_x), std::end(l_x)),
+                           std::min(*std::min_element(std::begin(b_x), std::end(b_x)),
+                                    *std::min_element(std::begin(t_x), std::end(t_x)))));
+  xmax = std::max(*std::max_element(std::begin(r_x), std::end(r_x)),
+                  std::max(*std::max_element(std::begin(l_x), std::end(l_x)),
+                           std::max(*std::max_element(std::begin(b_x), std::end(b_x)),
+                                    *std::max_element(std::begin(t_x), std::end(t_x)))));
+  ymin = std::min(*std::min_element(std::begin(r_y), std::end(r_y)),
+                  std::min(*std::min_element(std::begin(l_y), std::end(l_y)),
+                           std::min(*std::min_element(std::begin(b_y), std::end(b_y)),
+                                    *std::min_element(std::begin(t_y), std::end(t_y)))));
+  ymax = std::max(*std::max_element(std::begin(r_y), std::end(r_y)),
+                  std::max(*std::max_element(std::begin(l_y), std::end(l_y)),
+                           std::max(*std::max_element(std::begin(b_y), std::end(b_y)),
+                                    *std::max_element(std::begin(t_y), std::end(t_y)))));
   pair.first = box_t(point_t(xmin, ymin), point_t(xmax, ymax));
-
-  free(r);
-  free(l);
-  free(b);
-  free(t);
 }
 
 void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int verbose)
@@ -169,12 +176,12 @@ int main(int argc, const char ** argv)
   // Arguments from command line
   if (argc > 1) indexfile = argv[1];
   if (argc > 2) sscanf(argv[2], "%d", &order_of_magnitude);
-  if (argc > 3) list_prefix = argv[3];
-  if (argc > 4) read_prefix = argv[4];
+  if (argc > 3) read_prefix = argv[3];
+  if (argc > 4) list_prefix = argv[4];
   fprintf(stderr, ANSI_COLOR_BLUE "index file \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", indexfile);
   fprintf(stderr, ANSI_COLOR_BLUE "order of magnitude \t =" ANSI_COLOR_GREEN " %d" ANSI_COLOR_RESET "\n", order_of_magnitude);
-  fprintf(stderr, ANSI_COLOR_BLUE "list_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", list_prefix);
   fprintf(stderr, ANSI_COLOR_BLUE "read_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", read_prefix);
+  fprintf(stderr, ANSI_COLOR_BLUE "list_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", list_prefix);
 
   // Initialize
   webmercator_pj = pj_init_plus(webmercator);
@@ -203,11 +210,9 @@ int main(int argc, const char ** argv)
 
   // Build R-Tree
   // Resource: http://www.boost.org/doc/libs/1_65_1/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
-  {
-    allocator_t alloc(file.get_segment_manager());
-    rtree_t * rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);
-    rtree_ptr->insert(scene_list);
-  }
+  allocator_t alloc(file.get_segment_manager());
+  rtree_t * rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);
+  rtree_ptr->insert(scene_list);
   bi::managed_mapped_file::shrink_to_fit(indexfile);
 
   return 0;
