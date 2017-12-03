@@ -257,13 +257,14 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   pj_free(projection);
 
   /* World coordinates to image coordinates */
+  #pragma omp simd collapse(2)
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE);
-
       world_to_image(&data.xs[index], &data.ys[index], scene.second.transform);
     }
   }
+
   xmin = *std::min_element(std::begin(data.xs), std::end(data.xs));
   xmax = *std::max_element(std::begin(data.xs), std::end(data.xs));
   ymin = *std::min_element(std::begin(data.ys), std::end(data.ys));
