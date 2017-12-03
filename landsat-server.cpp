@@ -44,6 +44,7 @@
 #include <boost/math/constants/constants.hpp>
 
 #include "ansi.h"
+#include "constants.h"
 #include "greater_landsat_scene.h"
 #include "lesser_landsat_scene.h"
 #include "load.h"
@@ -67,7 +68,7 @@ bi::managed_mapped_file * file = nullptr;
 uint8_t tile[TILE_SIZE2*4]; // RGBA ergo 4
 
 void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data);
-void fetch(const value_t & pair, const box_t & tile_bb, texture_data & data);
+void fetch(const value_t & pair, int z, const box_t & tile_bb, texture_data & data);
 void zxy_commit(const std::vector<texture_data> & data);
 uint8_t sigmoidal(uint16_t _u);
 
@@ -135,7 +136,7 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   png_write(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
-void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data & data)
+void fetch(const value_t & scene, int z, const box_t & tile_bounding_box, texture_data & data)
 {
   GDALDatasetH handles[3];
   GDALRasterBandH bands[3];
@@ -160,15 +161,8 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
   double w = TILE_SIZE * (texture_bounding_box_width  / tile_bounding_box_width);
   double h = TILE_SIZE * (texture_bounding_box_height / tile_bounding_box_height);
 
-  data.texture_width  = std::max(SMALL_TILE_SIZE, static_cast<int>(std::round(w)));
-  data.texture_height = std::max(SMALL_TILE_SIZE, static_cast<int>(std::round(h)));
-
-  if (((XMIN(data.bounding_box) == XMIN(image_bounding_box) &&
-        XMAX(data.bounding_box) == XMAX(image_bounding_box)) ||
-       (YMIN(data.bounding_box) == YMIN(image_bounding_box) &&
-        YMAX(data.bounding_box) == YMAX(image_bounding_box))) &&
-      data.texture_width == data.texture_height &&
-      data.texture_width == SMALL_TILE_SIZE) { // If previews are usable ...
+  if (z <= SMALL_TILE_ZOOM) {
+    data.texture_width = data.texture_height = SMALL_TILE_SIZE;
     data.xscale = (double)data.texture_width  / scene.second.width;
     data.yscale = (double)data.texture_height / scene.second.height;
     data.bounding_box = image_bounding_box; // adjust the texture bounding box
@@ -177,6 +171,8 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
       data.textures[i] = static_cast<const uint16_t *>(scene.second.rgb[i]);
   }
   else { // If previews are not usable ...
+    data.texture_width  = static_cast<int>(std::round(w));
+    data.texture_height = static_cast<int>(std::round(h));
     data.xscale = (double)(data.texture_width - FUDGE)/texture_bounding_box_width;
     data.yscale = (double)(data.texture_height - FUDGE)/texture_bounding_box_height;
 
@@ -193,7 +189,7 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
 
     // Fetch textures
     // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
-    #pragma omp parallel for schedule(static) num_threads(3)
+#pragma omp parallel for schedule(static) num_threads(3)
     for (int i = 0; i < 3; ++i) {
       data.textures[i] = std::shared_ptr<uint16_t>(new uint16_t[data.texture_width * data.texture_height],
                                                    [](uint16_t * p){ delete[] p;});
@@ -274,7 +270,7 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   box_t tile_bounding_box = box_t(point_t(std::floor(xmin), std::floor(ymin)),
                                   point_t(std::ceil(xmax), std::ceil(ymax)));
 
-  fetch(scene, tile_bounding_box, data);
+  fetch(scene, z, tile_bounding_box, data);
 }
 
 void zxy_commit(const std::vector<texture_data> & texture_list)
