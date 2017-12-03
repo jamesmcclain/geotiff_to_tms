@@ -176,12 +176,12 @@ int main(int argc, const char ** argv)
   // Arguments from command line
   if (argc > 1) indexfile = argv[1];
   if (argc > 2) sscanf(argv[2], "%d", &order_of_magnitude);
-  if (argc > 3) list_prefix = argv[3];
-  if (argc > 4) read_prefix = argv[4];
+  if (argc > 3) read_prefix = argv[3];
+  if (argc > 4) list_prefix = argv[4];
   fprintf(stderr, ANSI_COLOR_BLUE "index file \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", indexfile);
   fprintf(stderr, ANSI_COLOR_BLUE "order of magnitude \t =" ANSI_COLOR_GREEN " %d" ANSI_COLOR_RESET "\n", order_of_magnitude);
-  fprintf(stderr, ANSI_COLOR_BLUE "list_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", list_prefix);
   fprintf(stderr, ANSI_COLOR_BLUE "read_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", read_prefix);
+  fprintf(stderr, ANSI_COLOR_BLUE "list_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", list_prefix);
 
   // Initialize
   webmercator_pj = pj_init_plus(webmercator);
