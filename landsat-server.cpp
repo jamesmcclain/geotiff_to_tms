@@ -261,15 +261,12 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE);
-      double uv[2] = {data.xs[index], data.ys[index]};
 
-      world_to_image(uv, scene.second.transform); // XXX
-      data.xs[index] = uv[0];
-      data.ys[index] = uv[1];
-      xmin = fmin(uv[0], xmin);
-      xmax = fmax(uv[0], xmax);
-      ymin = fmin(uv[1], ymin);
-      ymax = fmax(uv[1], ymax);
+      world_to_image(&data.xs[index], &data.ys[index], scene.second.transform);
+      xmin = fmin(data.xs[index], xmin);
+      xmax = fmax(data.xs[index], xmax);
+      ymin = fmin(data.ys[index], ymin);
+      ymax = fmax(data.ys[index], ymax);
     }
   }
 

@@ -10,20 +10,17 @@ LDFLAGS += -lproj $(GDAL_LDFLAGS)
 
 all: landsat-index landsat-server
 
-landsat-index: landsat-index.o projection.o
+landsat-index: landsat-index.o
 	$(CXX) $^ $(LDFLAGS) -fopenmp -o $@
 
-landsat-server: server.o fullio.o landsat-server.o pngwrite.o projection.o
+landsat-server: server.o fullio.o landsat-server.o pngwrite.o
 	$(CXX) $^ $(LDFLAGS) -fopenmp -o $@
 
-landsat-server.o: landsat-server.cpp constants.h greater_landsat_scene.h lesser_landsat_scene.h load.h rtree.hpp textures.hpp
+landsat-server.o: landsat-server.cpp constants.h greater_landsat_scene.h lesser_landsat_scene.h load.h projection.h rtree.hpp textures.hpp
 	$(CXX) $(CXXFLAGS) $(GDAL_CFLAGS) $(BOOST_CXXFLAGS) -Wno-reorder -Wno-unused-parameter $< -fopenmp -c -o $@
 
-landsat-index.o: landsat-index.cpp lesser_landsat_scene.h rtree.hpp
+landsat-index.o: landsat-index.cpp lesser_landsat_scene.h projection.h rtree.hpp
 	$(CXX) $(CXXFLAGS) $(GDAL_CFLAGS) $(BOOST_CXXFLAGS) $< -fopenmp -c -o $@
-
-projection.o: projection.c projection.h
-	$(CC) $(CFLAGS) $(GDAL_CFLAGS) $< -c -o $@
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) $< -c -o $@

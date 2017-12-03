@@ -67,9 +67,9 @@ void bounding_box(std::pair<box_t, lesser_landsat_scene_struct> & pair)
   // Get world coordinates around the periphery
   for (int i = 0; i < INCREMENTS; ++i) {
     t[2*i + 0] = b[2*i + 0] = 0.5 + static_cast<double>(i*pair.second.width)/INCREMENTS;  // x values across the top and bottom
-    t[2*i + 1] = l[2*i + 0] = 0.0;                                                        // y values across the top and x values on the left// XXX
-    b[2*i + 1] = static_cast<double>(pair.second.height);                                 // y values across the bottom
-    r[2*i + 0] = static_cast<double>(pair.second.width);                                  // x values on the right
+    t[2*i + 1] = l[2*i + 0] = 0.5;                                                        // y values across the top and x values on the left
+    b[2*i + 1] = 0.5 + static_cast<double>(pair.second.height);                           // y values across the bottom
+    r[2*i + 0] = 0.5 + static_cast<double>(pair.second.width);                            // x values on the right
     l[2*i + 1] = r[2*i + 1] = 0.5 + static_cast<double>(i*pair.second.height)/INCREMENTS; // y values on the left and right
 
     image_to_world(t + 2*i, pair.second.transform);
