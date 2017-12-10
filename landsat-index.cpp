@@ -115,7 +115,7 @@ box_t bounding_box(lesser_landsat_scene_struct scene)
   return box_t(point_t(xmin, ymin), point_t(xmax, ymax));
 }
 
-void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int verbose)
+void metadata(const std::string & prefix, struct lesser_landsat_scene_struct & s, int verbose)
 {
   char * wkt = NULL, * proj4 = NULL;
   OGRSpatialReferenceH srs = NULL;
@@ -124,7 +124,7 @@ void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int v
   char filename[STRING_LEN];
 
   // Open the bands
-  sprintf(pattern, "%s%s", prefix, s.filename);
+  sprintf(pattern, "%s%s", prefix.c_str(), s.filename);
   for (int i = 0; i < 3; ++ i) {
     sprintf(filename, pattern, 4-i);
     if (verbose) fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", filename);
@@ -176,23 +176,24 @@ int main(int argc, const char ** argv)
   char buffer[STRING_LEN];
   char product_id[STRING_LEN];
   char infix[STRING_LEN];
-  const char * list_prefix = DEFAULT_LIST_PREFIX;
-  const char * read_prefix = DEFAULT_READ_PREFIX;
-  const char * indexfile = DEFAULT_INDEXFILE;
-  const char * bulkfile = DEFAULT_BULKFILE;
+  std::string list_prefix = std::string(DEFAULT_LIST_PREFIX);
+  std::string read_prefix = std::string(DEFAULT_READ_PREFIX);
+  std::string stem = std::string(DEFAULT_STEM);
   int order_of_magnitude = 28;
 
   // Arguments from command line
-  if (argc > 1) indexfile = argv[1];
-  if (argc > 2) bulkfile = argv[2];
-  if (argc > 3) sscanf(argv[3], "%d", &order_of_magnitude);
-  if (argc > 4) read_prefix = argv[4];
-  if (argc > 5) list_prefix = argv[5];
-  fprintf(stderr, ANSI_COLOR_BLUE "index file \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", indexfile);
-  fprintf(stderr, ANSI_COLOR_BLUE "bulk file \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", bulkfile);
+  if (argc > 1) stem = std::string(argv[1]);
+  if (argc > 2) sscanf(argv[2], "%d", &order_of_magnitude);
+  if (argc > 3) read_prefix = std::string(argv[3]);
+  if (argc > 4) list_prefix = std::string(argv[4]);
+  const std::string indexfile = stem + std::string(INDEX_EXTENSION);
+  const std::string bulkfile = stem + std::string(BULK_EXTENSION);
+
+  fprintf(stderr, ANSI_COLOR_BLUE "index file \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", indexfile.c_str());
+  fprintf(stderr, ANSI_COLOR_BLUE "bulk file \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", bulkfile.c_str());
   fprintf(stderr, ANSI_COLOR_BLUE "order of magnitude \t =" ANSI_COLOR_GREEN " %d" ANSI_COLOR_RESET "\n", order_of_magnitude);
-  fprintf(stderr, ANSI_COLOR_BLUE "read_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", read_prefix);
-  fprintf(stderr, ANSI_COLOR_BLUE "list_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", list_prefix);
+  fprintf(stderr, ANSI_COLOR_BLUE "read_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", read_prefix.c_str());
+  fprintf(stderr, ANSI_COLOR_BLUE "list_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", list_prefix.c_str());
 
   // Initialize
   webmercator_pj = pj_init_plus(webmercator);
@@ -203,7 +204,7 @@ int main(int argc, const char ** argv)
     char * filename = new char[1<<8];
 
     sscanf(buffer, "%[^,]", product_id);
-    sscanf(strstr(buffer, list_prefix) + strlen(list_prefix), "%s", infix);
+    sscanf(strstr(buffer, list_prefix.c_str()) + strlen(list_prefix.c_str()), "%s", infix);
     *(strstr(infix, POSTFIX)) = '\0';
     scene_metadata_list.push_back(std::make_pair(box_t(point_t(0, 0), point_t(1, 1)), -1));
     sprintf(filename, "%s%s_B%%d.TIF", infix, product_id);
@@ -212,12 +213,12 @@ int main(int argc, const char ** argv)
   fprintf(stderr, ANSI_COLOR_BLUE "scenes \t\t\t =" ANSI_COLOR_GREEN " %ld" ANSI_COLOR_RESET "\n", scene_metadata_list.size());
 
   // Persistence
-  int fd = open(bulkfile, O_CREAT|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
+  int fd = open(bulkfile.c_str(), O_CREAT|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
   if (fd == -1) {
     fprintf(stderr, ANSI_COLOR_RED "open(2) problem" ANSI_COLOR_RESET "\n");
     exit(-1);
   }
-  bi::managed_mapped_file file(bi::create_only, indexfile, 1<<order_of_magnitude);
+  bi::managed_mapped_file file(bi::create_only, indexfile.c_str(), 1<<order_of_magnitude);
 
   // Get data/metadata
   #pragma omp parallel for
@@ -249,7 +250,7 @@ int main(int argc, const char ** argv)
   allocator_t alloc(file.get_segment_manager());
   rtree_t * rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);
   rtree_ptr->insert(scene_metadata_list);
-  bi::managed_mapped_file::shrink_to_fit(indexfile);
+  bi::managed_mapped_file::shrink_to_fit(indexfile.c_str());
 
   return 0;
 }

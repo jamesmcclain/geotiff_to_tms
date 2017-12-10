@@ -58,8 +58,6 @@
 #include "rtree.hpp"
 #include "textures.hpp"
 
-const char * bulkfile = nullptr;
-const char * indexfile = nullptr;
 const char * prefix = nullptr;
 const lesser_landsat_scene_struct * bulk = nullptr;
 
@@ -69,8 +67,7 @@ projPJ webmercator = nullptr;
 bi::managed_mapped_file * file = nullptr;
 
 #define FUDGE (0.75)
-#define ENV_INDEX "TMS_INDEX"
-#define ENV_BULK "TMS_BULK"
+#define ENV_STEM "TMS_STEM"
 #define ENV_PREFIX "TMS_PREFIX"
 
 uint8_t tile[TILE_SIZE2*4]; // RGBA ergo 4
@@ -89,19 +86,13 @@ void preload(int verbose, void * extra)
 
   GDALAllRegister();
 
-  // index file
-  variable = std::getenv(ENV_INDEX);
-  if (variable)
-    indexfile = variable;
-  else
-    indexfile = DEFAULT_INDEXFILE;
+  // file stem
+  variable = std::getenv(ENV_STEM);
+  if (!variable) variable = DEFAULT_STEM;
 
-  // bulk file
-  variable = std::getenv(ENV_BULK);
-  if (variable)
-    bulkfile = variable;
-  else
-    bulkfile = DEFAULT_BULKFILE;
+  // index and bulk file names
+  const std::string indexfile = std::string(variable) + std::string(INDEX_EXTENSION);
+  const std::string bulkfile = std::string(variable) + std::string(BULK_EXTENSION);
 
   // prefix
   variable = std::getenv(ENV_PREFIX);
@@ -110,13 +101,14 @@ void preload(int verbose, void * extra)
   else
     prefix = DEFAULT_READ_PREFIX;
 
-  fprintf(stderr, ANSI_COLOR_BLUE "index file\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", indexfile);
+  fprintf(stderr, ANSI_COLOR_BLUE "index file\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", indexfile.c_str());
+  fprintf(stderr, ANSI_COLOR_BLUE "bulk file\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", bulkfile.c_str());
   fprintf(stderr, ANSI_COLOR_BLUE "prefix\t\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", prefix);
 
   webmercator = pj_init_plus(WEBMERCATOR);
 
   // index
-  file = new bi::managed_mapped_file(bi::open_only, indexfile);
+  file = new bi::managed_mapped_file(bi::open_only, indexfile.c_str());
   rtree_ptr = file->find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), allocator_t(file->get_segment_manager()));
 
   // bulk
@@ -124,7 +116,7 @@ void preload(int verbose, void * extra)
     int fd;
     struct stat info;
 
-    if ((fd = open(bulkfile, O_RDONLY)) == -1) {
+    if ((fd = open(bulkfile.c_str(), O_RDONLY)) == -1) {
       fprintf(stderr, ANSI_COLOR_RED "open(2) problem" ANSI_COLOR_RESET "\n");
       exit(-1);
     }

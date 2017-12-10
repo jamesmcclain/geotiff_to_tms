@@ -1,8 +1,7 @@
 #ifndef __CONSTANTS_H__
 #define __CONSTANTS_H__
 
-#define DEFAULT_INDEXFILE "/tmp/landsat.metadata"
-#define DEFAULT_BULKFILE "/tmp/landsat.data"
+#define DEFAULT_STEM "/tmp/landsat"
 #define DEFAULT_LIST_PREFIX "https://s3-us-west-2.amazonaws.com/landsat-pds/"
 #define DEFAULT_READ_PREFIX "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
 #define RADIUS (6378137.0)
