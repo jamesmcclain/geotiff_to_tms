@@ -34,6 +34,11 @@
 #include <cstring>
 #include <algorithm>
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 #include "gdal.h"
 #include "cpl_conv.h"
 #include "ogr_srs_api.h"
@@ -52,7 +57,8 @@ const char * webmercator = WEBMERCATOR;
 projPJ webmercator_pj = NULL;
 
 
-void bounding_box(std::pair<box_t, lesser_landsat_scene_struct> & pair)
+/* Reference: https://stackoverflow.com/questions/4986673/c11-rvalues-and-move-semantics-confusion-return-statement */
+box_t bounding_box(lesser_landsat_scene_struct scene)
 {
   double xmin, xmax, ymin, ymax;
   std::vector<double> t_x = std::vector<double>(INCREMENTS);
@@ -68,20 +74,20 @@ void bounding_box(std::pair<box_t, lesser_landsat_scene_struct> & pair)
   // Get world coordinates around the periphery
   #pragma omp simd
   for (int i = 0; i < INCREMENTS; ++i) {
-    t_x[i] = b_x[i] = 0.5 + static_cast<double>(i*pair.second.width)/INCREMENTS;  // x values across the top and bottom
+    t_x[i] = b_x[i] = 0.5 + static_cast<double>(i*scene.width)/INCREMENTS;  // x values across the top and bottom
     t_y[i] = l_x[i] = 0.5;                                                        // y values across the top and x values on the left
-    b_y[i] = 0.5 + static_cast<double>(pair.second.height);                       // y values across the bottom
-    r_x[i] = 0.5 + static_cast<double>(pair.second.width);                        // x values on the right
-    l_y[i] = r_y[i] = 0.5 + static_cast<double>(i*pair.second.height)/INCREMENTS; // y values on the left and right
+    b_y[i] = 0.5 + static_cast<double>(scene.height);                       // y values across the bottom
+    r_x[i] = 0.5 + static_cast<double>(scene.width);                        // x values on the right
+    l_y[i] = r_y[i] = 0.5 + static_cast<double>(i*scene.height)/INCREMENTS; // y values on the left and right
 
-    image_to_world(&t_x[i], &t_y[i], pair.second.transform);
-    image_to_world(&b_x[i], &b_y[i], pair.second.transform);
-    image_to_world(&l_x[i], &l_y[i], pair.second.transform);
-    image_to_world(&r_x[i], &r_y[i], pair.second.transform);
+    image_to_world(&t_x[i], &t_y[i], scene.transform);
+    image_to_world(&b_x[i], &b_y[i], scene.transform);
+    image_to_world(&l_x[i], &l_y[i], scene.transform);
+    image_to_world(&r_x[i], &r_y[i], scene.transform);
   }
 
   // Get WebMercator coordinates
-  projection_pj = pj_init_plus(pair.second.proj4);
+  projection_pj = pj_init_plus(scene.proj4);
   pj_transform(projection_pj, webmercator_pj, INCREMENTS, 1, &t_x[0], &t_y[0], NULL);
   pj_transform(projection_pj, webmercator_pj, INCREMENTS, 1, &b_x[0], &b_y[0], NULL);
   pj_transform(projection_pj, webmercator_pj, INCREMENTS, 1, &l_x[0], &l_y[0], NULL);
@@ -105,7 +111,8 @@ void bounding_box(std::pair<box_t, lesser_landsat_scene_struct> & pair)
                   std::max(*std::max_element(std::begin(l_y), std::end(l_y)),
                            std::max(*std::max_element(std::begin(b_y), std::end(b_y)),
                                     *std::max_element(std::begin(t_y), std::end(t_y)))));
-  pair.first = box_t(point_t(xmin, ymin), point_t(xmax, ymax));
+
+  return box_t(point_t(xmin, ymin), point_t(xmax, ymax));
 }
 
 void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int verbose)
@@ -164,21 +171,25 @@ void metadata(const char * prefix, struct lesser_landsat_scene_struct & s, int v
 
 int main(int argc, const char ** argv)
 {
-  std::vector<value_t> scene_list;
+  std::vector<value_t> scene_metadata_list;
+  std::vector<const char *> scene_filename_list;
   char buffer[STRING_LEN];
   char product_id[STRING_LEN];
   char infix[STRING_LEN];
   const char * list_prefix = DEFAULT_LIST_PREFIX;
   const char * read_prefix = DEFAULT_READ_PREFIX;
   const char * indexfile = DEFAULT_INDEXFILE;
+  const char * bulkfile = DEFAULT_BULKFILE;
   int order_of_magnitude = 28;
 
   // Arguments from command line
   if (argc > 1) indexfile = argv[1];
-  if (argc > 2) sscanf(argv[2], "%d", &order_of_magnitude);
-  if (argc > 3) read_prefix = argv[3];
-  if (argc > 4) list_prefix = argv[4];
+  if (argc > 2) bulkfile = argv[2];
+  if (argc > 3) sscanf(argv[3], "%d", &order_of_magnitude);
+  if (argc > 4) read_prefix = argv[4];
+  if (argc > 5) list_prefix = argv[5];
   fprintf(stderr, ANSI_COLOR_BLUE "index file \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", indexfile);
+  fprintf(stderr, ANSI_COLOR_BLUE "bulk file \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", bulkfile);
   fprintf(stderr, ANSI_COLOR_BLUE "order of magnitude \t =" ANSI_COLOR_GREEN " %d" ANSI_COLOR_RESET "\n", order_of_magnitude);
   fprintf(stderr, ANSI_COLOR_BLUE "read_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", read_prefix);
   fprintf(stderr, ANSI_COLOR_BLUE "list_prefix \t\t =" ANSI_COLOR_GREEN " %s" ANSI_COLOR_RESET "\n", list_prefix);
@@ -189,30 +200,55 @@ int main(int argc, const char ** argv)
 
   // Read the scene list
   while (fgets(buffer, STRING_LEN, stdin) != NULL) {
+    char * filename = new char[1<<8];
+
     sscanf(buffer, "%[^,]", product_id);
     sscanf(strstr(buffer, list_prefix) + strlen(list_prefix), "%s", infix);
     *(strstr(infix, POSTFIX)) = '\0';
-    scene_list.push_back(std::make_pair(box_t(point_t(0, 0), point_t(1, 1)),
-                                        lesser_landsat_scene_struct()));
-    sprintf(scene_list.back().second.filename, "%s%s_B%%d.TIF", infix, product_id);
+    scene_metadata_list.push_back(std::make_pair(box_t(point_t(0, 0), point_t(1, 1)), -1));
+    sprintf(filename, "%s%s_B%%d.TIF", infix, product_id);
+    scene_filename_list.push_back(filename);
   }
-  fprintf(stderr, ANSI_COLOR_BLUE "scenes \t\t\t =" ANSI_COLOR_GREEN " %ld" ANSI_COLOR_RESET "\n", scene_list.size());
+  fprintf(stderr, ANSI_COLOR_BLUE "scenes \t\t\t =" ANSI_COLOR_GREEN " %ld" ANSI_COLOR_RESET "\n", scene_metadata_list.size());
 
-  // Get metadata
-  #pragma omp parallel for
-  for (unsigned int i = 0; i < scene_list.size(); ++i) {
-    metadata(read_prefix, scene_list[i].second, true);
-    bounding_box(scene_list[i]);
+  // Persistence
+  int fd = open(bulkfile, O_CREAT|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
+  if (fd == -1) {
+    fprintf(stderr, ANSI_COLOR_RED "open(2) problem" ANSI_COLOR_RESET "\n");
+    exit(-1);
   }
-
-  // Disk-backed memory
   bi::managed_mapped_file file(bi::create_only, indexfile, 1<<order_of_magnitude);
+
+  // Get data/metadata
+  #pragma omp parallel for
+  for (unsigned int i = 0; i < scene_metadata_list.size(); ++i) {
+    lesser_landsat_scene_struct scene;
+
+    // Read and write scene information
+    memcpy(&scene.filename, scene_filename_list[i], sizeof(scene.filename));
+    delete scene_filename_list[i];
+    metadata(read_prefix, scene, true);
+    if (lseek(fd, sizeof(scene)*i, SEEK_SET) == -1) {
+      fprintf(stderr, ANSI_COLOR_RED "lseek64(2) problem" ANSI_COLOR_RESET "\n");
+      exit(-1);
+    }
+    if (write(fd, &scene, sizeof(scene)) == -1) {
+      fprintf(stderr, ANSI_COLOR_RED "write(2) problem" ANSI_COLOR_RESET "\n");
+      exit(-1);
+    }
+
+    // Record scene bouinding box information
+    scene_metadata_list[i].first = bounding_box(scene);
+    scene_metadata_list[i].second = static_cast<uint64_t>(i);
+  }
+
+  close(fd);
 
   // Build R-Tree
   // Resource: http://www.boost.org/doc/libs/1_65_1/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
   allocator_t alloc(file.get_segment_manager());
   rtree_t * rtree_ptr = file.find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), alloc);
-  rtree_ptr->insert(scene_list);
+  rtree_ptr->insert(scene_metadata_list);
   bi::managed_mapped_file::shrink_to_fit(indexfile);
 
   return 0;

@@ -1,6 +1,8 @@
 #ifndef __RTREE_H__
 #define __RTREE_H__
 
+#include <cstdint>
+
 #include <boost/interprocess/managed_mapped_file.hpp>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point.hpp>
@@ -17,7 +19,7 @@ namespace bgi = boost::geometry::index;
 // Resource: http://www.boost.org/doc/libs/1_65_1/libs/geometry/doc/html/geometry/spatial_indexes/rtree_examples/index_stored_in_mapped_file_using_boost_interprocess.html
 typedef bgm::point<double, 2, bg::cs::cartesian> point_t;
 typedef bgm::box<point_t> box_t;
-typedef std::pair<box_t, lesser_landsat_scene_struct> value_t;
+typedef std::pair<box_t, uint64_t> value_t;
 typedef bgi::linear<32, 8> params_t;
 typedef bgi::indexable<value_t> indexable_t;
 typedef bgi::equal_to<value_t> equal_to_t;
