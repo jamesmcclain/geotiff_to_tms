@@ -38,12 +38,17 @@
 #include <memory>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include <boost/geometry/algorithms/intersection.hpp>
 #include <boost/geometry/algorithms/intersects.hpp>
 #include <boost/math/constants/constants.hpp>
 
 #include "ansi.h"
+#include "constants.h"
 #include "greater_landsat_scene.h"
 #include "lesser_landsat_scene.h"
 #include "load.h"
@@ -53,21 +58,22 @@
 #include "rtree.hpp"
 #include "textures.hpp"
 
-const char * indexfile = nullptr;
 const char * prefix = nullptr;
+const lesser_landsat_scene_struct * bulk = nullptr;
+
 const double pi = boost::math::constants::pi<double>();
 const rtree_t * rtree_ptr = nullptr;
 projPJ webmercator = nullptr;
 bi::managed_mapped_file * file = nullptr;
 
 #define FUDGE (0.75)
-#define ENV_INDEX "TMS_INDEX"
+#define ENV_STEM "TMS_STEM"
 #define ENV_PREFIX "TMS_PREFIX"
 
 uint8_t tile[TILE_SIZE2*4]; // RGBA ergo 4
 
 void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data);
-void fetch(const value_t & pair, const box_t & tile_bb, texture_data & data);
+void fetch(const value_t & pair, int z, const box_t & tile_bb, texture_data & data);
 void zxy_commit(const std::vector<texture_data> & data);
 uint8_t sigmoidal(uint16_t _u);
 
@@ -80,12 +86,13 @@ void preload(int verbose, void * extra)
 
   GDALAllRegister();
 
-  // index file
-  variable = std::getenv(ENV_INDEX);
-  if (variable)
-    indexfile = variable;
-  else
-    indexfile = DEFAULT_INDEXFILE;
+  // file stem
+  variable = std::getenv(ENV_STEM);
+  if (!variable) variable = DEFAULT_STEM;
+
+  // index and bulk file names
+  const std::string indexfile = std::string(variable) + std::string(INDEX_EXTENSION);
+  const std::string bulkfile = std::string(variable) + std::string(BULK_EXTENSION);
 
   // prefix
   variable = std::getenv(ENV_PREFIX);
@@ -94,13 +101,33 @@ void preload(int verbose, void * extra)
   else
     prefix = DEFAULT_READ_PREFIX;
 
-  fprintf(stderr, ANSI_COLOR_BLUE "index file\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", indexfile);
+  fprintf(stderr, ANSI_COLOR_BLUE "index file\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", indexfile.c_str());
+  fprintf(stderr, ANSI_COLOR_BLUE "bulk file\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", bulkfile.c_str());
   fprintf(stderr, ANSI_COLOR_BLUE "prefix\t\t = " ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", prefix);
 
   webmercator = pj_init_plus(WEBMERCATOR);
 
-  file = new bi::managed_mapped_file(bi::open_only, indexfile);
+  // index
+  file = new bi::managed_mapped_file(bi::open_only, indexfile.c_str());
   rtree_ptr = file->find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), allocator_t(file->get_segment_manager()));
+
+  // bulk
+  {
+    int fd;
+    struct stat info;
+
+    if ((fd = open(bulkfile.c_str(), O_RDONLY)) == -1) {
+      fprintf(stderr, ANSI_COLOR_RED "open(2) problem" ANSI_COLOR_RESET "\n");
+      exit(-1);
+    }
+    if (fstat(fd, &info) == -1) {
+      fprintf(stderr, ANSI_COLOR_RED "fstat(2) problem" ANSI_COLOR_RESET "\n");
+      exit(-1);
+    }
+    bulk = static_cast<const lesser_landsat_scene_struct *>(mmap(NULL, info.st_size, PROT_READ, MAP_PRIVATE, fd, 0));
+    close(fd);
+  }
+
 }
 
 // Local
@@ -110,7 +137,7 @@ void load(int verbose, void * extra)
 
 void zxy(int fd, int z, int x, int y, int verbose, void * extra)
 {
-  std::vector<value_t> scene_list;
+  std::vector<value_t> metascene_list;
   std::vector<texture_data> texture_list;
   double z2 = pow(2.0, z);
   double xmin = (2*((x+0) / z2) - 1) * pi * RADIUS;
@@ -121,28 +148,29 @@ void zxy(int fd, int z, int x, int y, int verbose, void * extra)
   point_t larger = point_t(std::max(xmin, xmax), std::max(ymin,ymax));
   box_t box = box_t(smaller, larger);
 
-  rtree_ptr->query(bgi::intersects(box), std::back_inserter(scene_list));
-  texture_list.resize(scene_list.size());
+  rtree_ptr->query(bgi::intersects(box), std::back_inserter(metascene_list));
+  texture_list.resize(metascene_list.size());
 
-  for (int i = -1; i < (int)scene_list.size(); ++i) {
+  for (int i = -1; i < (int)metascene_list.size(); ++i) {
     if (i == -1)
       memset(tile, 0, sizeof(tile));
     else
-      zxy_read(z, x, y, scene_list[i], texture_list[i]);
+      zxy_read(z, x, y, metascene_list[i], texture_list[i]);
   }
 
   zxy_commit(texture_list);
   png_write(fd, tile, TILE_SIZE, TILE_SIZE, 0);
 }
 
-void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data & data)
+void fetch(const value_t & metascene, int z, const box_t & tile_bounding_box, texture_data & data)
 {
+  const lesser_landsat_scene_struct * scene = &bulk[metascene.second];
   GDALDatasetH handles[3];
   GDALRasterBandH bands[3];
   char pattern[STRING_LEN];
   char filename[STRING_LEN];
 
-  box_t image_bounding_box = box_t(point_t(0, 0), point_t(scene.second.width-1, scene.second.height-1));
+  box_t image_bounding_box = box_t(point_t(0, 0), point_t(scene->width-1, scene->height-1));
 
   // If no intersection, short circuit
   if (!bg::intersects(tile_bounding_box, image_bounding_box))
@@ -160,28 +188,23 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
   double w = TILE_SIZE * (texture_bounding_box_width  / tile_bounding_box_width);
   double h = TILE_SIZE * (texture_bounding_box_height / tile_bounding_box_height);
 
-  data.texture_width  = std::max(SMALL_TILE_SIZE, static_cast<int>(std::round(w)));
-  data.texture_height = std::max(SMALL_TILE_SIZE, static_cast<int>(std::round(h)));
-
-  if (((XMIN(data.bounding_box) == XMIN(image_bounding_box) &&
-        XMAX(data.bounding_box) == XMAX(image_bounding_box)) ||
-       (YMIN(data.bounding_box) == YMIN(image_bounding_box) &&
-        YMAX(data.bounding_box) == YMAX(image_bounding_box))) &&
-      data.texture_width == data.texture_height &&
-      data.texture_width == SMALL_TILE_SIZE) { // If previews are usable ...
-    data.xscale = (double)data.texture_width  / scene.second.width;
-    data.yscale = (double)data.texture_height / scene.second.height;
+  if (z <= SMALL_TILE_ZOOM) {
+    data.texture_width = data.texture_height = SMALL_TILE_SIZE;
+    data.xscale = (double)data.texture_width  / scene->width;
+    data.yscale = (double)data.texture_height / scene->height;
     data.bounding_box = image_bounding_box; // adjust the texture bounding box
 
     for (int i = 0; i < 3; ++i)
-      data.textures[i] = static_cast<const uint16_t *>(scene.second.rgb[i]);
+      data.textures[i] = static_cast<const uint16_t *>(scene->rgb[i]);
   }
   else { // If previews are not usable ...
+    data.texture_width  = static_cast<int>(std::round(w));
+    data.texture_height = static_cast<int>(std::round(h));
     data.xscale = (double)(data.texture_width - FUDGE)/texture_bounding_box_width;
     data.yscale = (double)(data.texture_height - FUDGE)/texture_bounding_box_height;
 
     // Open handles and bands
-    sprintf(pattern, "%s%s", prefix, scene.second.filename);
+    sprintf(pattern, "%s%s", prefix, scene->filename);
     for (int i = 4; i > 1; --i) {
       sprintf(filename, pattern, i);
       if ((handles[4-i] = GDALOpen(filename, GA_ReadOnly)) == NULL) {
@@ -219,8 +242,9 @@ void fetch(const value_t & scene, const box_t & tile_bounding_box, texture_data 
   return;
 }
 
-void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
+void zxy_read(int z, int x, int y, const value_t & metascene, texture_data & data)
 {
+  const lesser_landsat_scene_struct * scene = &bulk[metascene.second];
   double xmin, xmax, ymin, ymax;
 
   data.xs.resize(TILE_SIZE * TILE_SIZE);
@@ -252,7 +276,7 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   }
 
   /* Web Mercator to world coordinates */
-  projPJ projection = pj_init_plus(scene.second.proj4);
+  projPJ projection = pj_init_plus(scene->proj4);
   pj_transform(webmercator, projection, TILE_SIZE*TILE_SIZE, 1, &(data.xs[0]), &(data.ys[0]), NULL);
   pj_free(projection);
 
@@ -261,7 +285,7 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   for (int j = 0; j < TILE_SIZE; ++j) {
     for (int i = 0; i < TILE_SIZE; ++i) {
       int index = (i + j*TILE_SIZE);
-      world_to_image(&data.xs[index], &data.ys[index], scene.second.transform);
+      world_to_image(&data.xs[index], &data.ys[index], scene->transform);
     }
   }
 
@@ -274,7 +298,7 @@ void zxy_read(int z, int x, int y, const value_t & scene, texture_data & data)
   box_t tile_bounding_box = box_t(point_t(std::floor(xmin), std::floor(ymin)),
                                   point_t(std::ceil(xmax), std::ceil(ymax)));
 
-  fetch(scene, tile_bounding_box, data);
+  fetch(metascene, z, tile_bounding_box, data);
 }
 
 void zxy_commit(const std::vector<texture_data> & texture_list)
