@@ -1,6 +1,8 @@
 cachegrind.out.*
 landsat-index
+landsat-index.static
 landsat-server
+landsat-server.static
 *.o
 .terraform
 *.tfstate

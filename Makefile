@@ -35,9 +35,11 @@ landsat-index.o: landsat-index.cpp lesser_landsat_scene.h projection.h rtree.hpp
 	$(CXX) $(CXXFLAGS) $< -c -o $@
 
 clean:
-	rm -f *.o
+	rm -f *.o landsat-index.static landsat-server.static
 
 cleaner: clean
 	rm -f landsat-index landsat-server
 
 cleanest: cleaner
+
+include static.mk

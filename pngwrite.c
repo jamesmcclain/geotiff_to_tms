@@ -38,8 +38,6 @@
 #include "pngwrite.h"
 
 
-uint8_t buffer[1<<20];
-
 void png_write(int fd, const uint8_t * tile, unsigned int width, unsigned int height, int paranoid)
 {
   FILE *fp;
@@ -47,6 +45,7 @@ void png_write(int fd, const uint8_t * tile, unsigned int width, unsigned int he
   png_infop info_ptr;
   png_color_8 sig_bit;
   png_bytep row_pointers[height];
+  uint8_t buffer[1<<20];
 
   fp = fmemopen(buffer, sizeof(buffer), "wb+");
 
