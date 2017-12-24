@@ -49,8 +49,6 @@
 
 #define P (1<<3)
 
-char buffer[1<<20];
-
 
 // http://localhost:8001/{z}/{x}/{y}.png
 int main(int argc, const char ** argv)
@@ -59,6 +57,7 @@ int main(int argc, const char ** argv)
   int fd1, fd2;
   uint8_t yes = 1;
   int p = P;
+  char buffer[1<<20];
 
   sa.sin_family = AF_INET;
   sa.sin_addr.s_addr = htonl(INADDR_ANY);

@@ -6,8 +6,8 @@ variable "region" {
 
 variable "ami" {
   type        = "string"
-  description = "AMI (e.g. ami-e689729e)"
-  default     = "ami-e689729e"
+  description = "AMI (e.g. ami-bf4193c7)"
+  default     = "ami-bf4193c7"
 }
 
 variable "key_name" {
