@@ -73,12 +73,12 @@ bi::managed_mapped_file * file = nullptr;
 
 uint8_t tile[TILE_SIZE2*4]; // RGBA ergo 4
 
+void zxy_near(int fd, int z, int x, int y, int verbose);
 void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data);
-void fetch(const value_t & pair, int z, const box_t & tile_bb, texture_data & data);
 void zxy_commit(const std::vector<texture_data> & data);
+void fetch(const value_t & pair, int z, const box_t & tile_bb, texture_data & data);
 uint8_t sigmoidal(uint16_t _u);
 
-// http://localhost:8001/{z}/{x}/{y}.png
 
 // Global
 void preload(int verbose, void * extra)
@@ -137,6 +137,11 @@ void load(int verbose, void * extra)
 }
 
 void zxy(int fd, int z, int x, int y, int verbose, void * extra)
+{
+  zxy_near(fd, z, x, y, verbose);
+}
+
+void zxy_near(int fd, int z, int x, int y, int verbose)
 {
   std::vector<value_t> metascene_list;
   std::vector<texture_data> texture_list;
