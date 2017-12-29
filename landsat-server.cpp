@@ -157,6 +157,13 @@ void zxy_near(int fd, int z, int x, int y, int verbose)
   rtree_ptr->query(bgi::intersects(box), std::back_inserter(metascene_list));
   texture_list.resize(metascene_list.size());
 
+  if (verbose) {
+    fprintf(stderr, ANSI_COLOR_RED "z=%d x=%d y=%d scenes=%lu" ANSI_COLOR_RESET "\n", z, x, y, metascene_list.size());
+    for (auto i = metascene_list.begin(); i != metascene_list.end(); ++i) {
+      fprintf(stderr, ANSI_COLOR_RED "%s" ANSI_COLOR_RESET "\n", bulk[i->second].filename);
+    }
+  }
+
   for (int i = -1; i < (int)metascene_list.size(); ++i) {
     if (i == -1)
       memset(tile, 0, sizeof(tile));
