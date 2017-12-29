@@ -148,10 +148,10 @@ void zxy_near(int fd, int z, int x, int y, int verbose)
   double z2 = pow(2.0, z);
   double xmin = (2*((x+0) / z2) - 1) * pi * RADIUS;
   double xmax = (2*((x+1) / z2) - 1) * pi * RADIUS;
-  double ymin = (1 - 2*((y+0) / z2)) * pi * RADIUS;
-  double ymax = (1 - 2*((y+1) / z2)) * pi * RADIUS;
-  point_t smaller = point_t(std::min(xmin, xmax), std::min(ymin,ymax));
-  point_t larger = point_t(std::max(xmin, xmax), std::max(ymin,ymax));
+  double ymax = (1 - 2*((y+0) / z2)) * pi * RADIUS;
+  double ymin = (1 - 2*((y+1) / z2)) * pi * RADIUS;
+  point_t smaller = point_t(xmin, ymin);
+  point_t larger = point_t(xmax, ymax);
   box_t box = box_t(smaller, larger);
 
   rtree_ptr->query(bgi::intersects(box), std::back_inserter(metascene_list));
