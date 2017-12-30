@@ -75,7 +75,8 @@ int main(int argc, const char ** argv)
   /* zxy(fd, 2, 2, 1, 1, NULL); */
   /* zxy(fd, 4, 11, 6, 1, NULL); */
   /* zxy(fd, 7, 94, 55, 1, NULL); */
-  zxy(fd, 16, 48705, 28528, 1, NULL);
+  /* zxy(fd, 16, 48705, 28528, 1, NULL); */
+  zxy(fd, 5, 7, 12, 1, NULL);
   fsync(fd); shutdown(fd, SHUT_RDWR); close(fd);
 #else
   /* Create socket */

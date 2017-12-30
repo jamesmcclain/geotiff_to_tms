@@ -73,12 +73,13 @@ bi::managed_mapped_file * file = nullptr;
 
 uint8_t tile[TILE_SIZE2*4]; // RGBA ergo 4
 
+void zxy_commit(const std::vector<texture_data> & data);
+void zxy_far(int fd, int z, int x, int y, int verbose);
+void zxy_near(int fd, int z, int x, int y, int verbose);
 void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data);
 void fetch(const value_t & pair, int z, const box_t & tile_bb, texture_data & data);
-void zxy_commit(const std::vector<texture_data> & data);
 uint8_t sigmoidal(uint16_t _u);
 
-// http://localhost:8001/{z}/{x}/{y}.png
 
 // Global
 void preload(int verbose, void * extra)
@@ -138,21 +139,91 @@ void load(int verbose, void * extra)
 
 void zxy(int fd, int z, int x, int y, int verbose, void * extra)
 {
-  std::vector<value_t> metascene_list;
-  std::vector<texture_data> texture_list;
+  if (z > 5 || z > SMALL_TILE_ZOOM)
+    zxy_near(fd, z, x, y, verbose);
+  else
+    zxy_far(fd, z, x, y, verbose);
+}
+
+void zxy_far(int fd, int z, int x, int y, int verbose)
+{
   double z2 = pow(2.0, z);
   double xmin = (2*((x+0) / z2) - 1) * pi * RADIUS;
   double xmax = (2*((x+1) / z2) - 1) * pi * RADIUS;
   double ymin = (1 - 2*((y+0) / z2)) * pi * RADIUS;
   double ymax = (1 - 2*((y+1) / z2)) * pi * RADIUS;
-  point_t smaller = point_t(std::min(xmin, xmax), std::min(ymin,ymax));
-  point_t larger = point_t(std::max(xmin, xmax), std::max(ymin,ymax));
+
+  memset(tile, 0, sizeof(tile));
+
+  #pragma omp parallel for collapse(2)
+  for (int j = 0; j < TILE_SIZE; ++j) {
+    for (int i = 0; i < TILE_SIZE; ++i) {
+      std::vector<value_t> metascene_list;
+      double x1 = xmin + ((i+0.49)/TILE_SIZE)*(xmax-xmin), x2 = xmin + ((i+0.51)/TILE_SIZE)*(xmax-xmin);
+      double y1 = ymin + ((j+0.49)/TILE_SIZE)*(ymax-ymin), y2 = ymin + ((j+0.51)/TILE_SIZE)*(ymax-ymin); // Seemingly needs to be inside second loop for OpenMP to do its work.  This is loop-invarient anyway, so hopefully it is getting dealt with.
+      box_t box = box_t(point_t(x1, y1), point_t(x2, y2));
+
+      rtree_ptr->query(bgi::intersects(box), std::back_inserter(metascene_list));
+
+      for (int index = (int)metascene_list.size()-1; index >= 0; --index) {
+        double x3 = xmin + ((i+0.50)/TILE_SIZE)*(xmax-xmin);
+        double y3 = ymin + ((j+0.50)/TILE_SIZE)*(ymax-ymin);
+        const lesser_landsat_scene_struct * scene = &bulk[metascene_list[index].second];
+
+        projPJ projection = pj_init_plus(scene->proj4); // XXX cache
+        pj_transform(webmercator, projection, 1, 1, &x3, &y3, NULL);
+        pj_free(projection);
+        world_to_image(&x3, &y3, scene->transform);
+
+        if ((0 <= x3 && x3 < scene->width) && (0 <= y3 && y3 < scene->height)) {
+          int tile_index = (i + j*TILE_SIZE)*4;
+          int u = static_cast<int>(std::round((x3 / scene->width)*SMALL_TILE_SIZE));
+          int v = static_cast<int>(std::round((y3 / scene->height)*SMALL_TILE_SIZE));
+          int texture_index = u + v*SMALL_TILE_SIZE;
+          uint8_t red, byte = 0;
+
+          byte |= red = sigmoidal(scene->rgb[0][texture_index]);
+          if (tile[tile_index + 3] == 0 /* alpha channel */ ||
+              tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
+            tile[tile_index + 0] = red;
+            byte |= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index]);
+            byte |= tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index]);
+            tile[tile_index + 3] = (byte ? -1 : 0);
+            // if (byte) break;
+          }
+        }
+      }
+    }
+  }
+
+  png_write(fd, tile, TILE_SIZE, TILE_SIZE, 0);
+}
+
+void zxy_near(int fd, int z, int x, int y, int verbose)
+{
+  std::vector<value_t> metascene_list;
+  std::vector<texture_data> texture_list;
+  double z2 = pow(2.0, z);
+  double xmin = (2*((x+0) / z2) - 1) * pi * RADIUS;
+  double xmax = (2*((x+1) / z2) - 1) * pi * RADIUS;
+  double ymax = (1 - 2*((y+0) / z2)) * pi * RADIUS;
+  double ymin = (1 - 2*((y+1) / z2)) * pi * RADIUS;
+  point_t smaller = point_t(xmin, ymin);
+  point_t larger = point_t(xmax, ymax);
   box_t box = box_t(smaller, larger);
 
   rtree_ptr->query(bgi::intersects(box), std::back_inserter(metascene_list));
   texture_list.resize(metascene_list.size());
 
-  for (int i = -1; i < (int)metascene_list.size(); ++i) {
+  if (verbose) {
+    fprintf(stderr, ANSI_COLOR_RED "z=%d x=%d y=%d scenes=%lu" ANSI_COLOR_RESET "\n", z, x, y, metascene_list.size());
+    for (auto i = metascene_list.begin(); i != metascene_list.end(); ++i) {
+      fprintf(stderr, ANSI_COLOR_RED "%s" ANSI_COLOR_RESET "\n", bulk[i->second].filename);
+    }
+  }
+
+  // XXX OpenMP
+  for (int i = -1; i < (int)texture_list.size(); ++i) {
     if (i == -1)
       memset(tile, 0, sizeof(tile));
     else
