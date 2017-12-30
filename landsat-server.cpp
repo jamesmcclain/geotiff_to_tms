@@ -189,7 +189,7 @@ void zxy_far(int fd, int z, int x, int y, int verbose)
             byte |= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index]);
             byte |= tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index]);
             tile[tile_index + 3] = (byte ? -1 : 0);
-            if (byte) break;
+            // if (byte) break;
           }
         }
       }
