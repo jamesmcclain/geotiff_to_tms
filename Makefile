@@ -1,6 +1,6 @@
 CC = gcc
 CXX = g++
-BOOST_CXXFLAGS ?= -I${HOME}/local/src/boost_1_65_1
+BOOST_CXXFLAGS ?= -I${HOME}/local/src/boost_1_66_0
 GDAL_CFLAGS ?= $(shell gdal-config --cflags)
 GDAL_LDFLAGS ?= $(shell gdal-config --libs) $(shell gdal-config --dep-libs)
 CFLAGS ?= -Wall -Wextra -O0 -ggdb3
