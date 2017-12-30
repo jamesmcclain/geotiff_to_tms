@@ -36,8 +36,7 @@ import csv
 import re
 import gzip
 
-scene_file = sys.argv[2]
-desired = set([])
+desgired = set([])
 seen = set([])
 
 with open(sys.argv[1]) as f:
