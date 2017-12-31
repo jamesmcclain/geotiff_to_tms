@@ -38,8 +38,8 @@ clean:
 	rm -f *.o
 
 cleaner: clean
-	rm -f landsat-index landsat-server landsat-index.static landsat-server.static
+	rm -f landsat-index landsat-server
 
-cleanest: cleaner
+cleanest: cleaner clean-static
 
 include static.mk
