@@ -128,7 +128,7 @@ int main(int argc, const char ** argv)
     fullread(fd2, buffer, sizeof(buffer));
     if (sscanf(buffer, "GET /%d/%d/%d.png HTTP/1.1", &z, &x, &y) == 3) {
       fullwrite(fd2, twohundred, strlen(twohundred));
-      zxy(fd2, z, x, y, 1, NULL);
+      zxy(fd2, z, x, y, 0, NULL);
     }
     else {
       fullwrite(fd2, fourohfour, strlen(fourohfour));
