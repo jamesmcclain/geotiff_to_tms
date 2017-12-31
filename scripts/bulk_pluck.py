@@ -48,7 +48,8 @@ with open(sys.argv[1]) as f:
 
     for row in reader:
         product_id = row['LANDSAT_PRODUCT_ID']
-        desired.add(product_id)
+        if row['dayOrNight'] == 'DAY':
+            desired.add(product_id)
 
 with gzip.open(sys.argv[2]) as f:
     reader = csv.DictReader(f, delimiter=',')
