@@ -36,27 +36,42 @@ import csv
 import re
 import gzip
 
-scene_file = sys.argv[2]
 desired = set([])
-seen = set([])
+scenes = {}
+
+# bulk_pluck.py metadata.csv scene_list.gz
+# metadata.csv comes from https://landsat.usgs.gov/landsat-bulk-metadata-service
+# scene_list.gz comes from http://landsat-pds.s3.amazonaws.com/c1/L8/scene_list.gz
 
 with open(sys.argv[1]) as f:
     reader = csv.DictReader(f, delimiter=',')
+
     for row in reader:
         product_id = row['LANDSAT_PRODUCT_ID']
-        desired.add(product_id)
+        if row['dayOrNight'] == 'DAY':
+            desired.add(product_id)
 
 with gzip.open(sys.argv[2]) as f:
-    product_id_expr = re.compile('^([^,]*)')
-    path_col_expr = re.compile('c1/L8/(\d+)/(\d+)/')
-    for line in f:
-        line = line[0:len(line)-1]
-        match = re.search(product_id_expr, line)
-        if (match != None) and (match.group(1) in desired):
-            match = re.search(path_col_expr, line)
-            path = match.group(1)
-            row = match.group(2)
+    reader = csv.DictReader(f, delimiter=',')
+    writer = csv.DictWriter(sys.stdout, fieldnames=reader.fieldnames)
+
+    for csv_row in reader:
+        if csv_row['productId'] in desired:
+            path = csv_row['path']
+            row = csv_row['row']
             pair = (path, row)
-            if pair not in seen:
-                seen.add(pair)
-                print(line)
+            if pair in scenes:
+                cloud_cover_1 = float(scenes[pair]['cloudCover'])
+                cloud_cover_2 = float(csv_row['cloudCover'])
+                if cloud_cover_1 < 0:
+                    cloud_cover_1 = 100 - cloud_cover_1
+                if cloud_cover_2 < 0:
+                    cloud_cover_2 = 100 - cloud_cover_2
+
+                if cloud_cover_2 < cloud_cover_1:
+                    scenes[pair] = csv_row
+            elif pair not in scenes:
+                scenes[pair] = csv_row
+
+    for pair, csv_row in scenes.viewitems():
+        writer.writerow(csv_row)
