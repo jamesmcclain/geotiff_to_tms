@@ -48,9 +48,13 @@
 #include <boost/geometry/algorithms/intersects.hpp>
 #include <boost/math/constants/constants.hpp>
 
+#include "gdal.h"
+#include "cpl_conv.h"
+#include "ogr_srs_api.h"
+#include "proj_api.h"
+
 #include "ansi.h"
 #include "constants.h"
-#include "greater_landsat_scene.h"
 #include "lesser_landsat_scene.h"
 #include "load.h"
 #include "pngwrite.h"
