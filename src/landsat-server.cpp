@@ -169,7 +169,7 @@ void zxy_far(int fd, int z, int x, int y, int verbose)
 
       rtree_ptr->query(bgi::intersects(box), std::back_inserter(metascene_list));
 
-      for (int index = (int)metascene_list.size()-1; index >= 0; --index) {
+      for (unsigned int index = 0; index < metascene_list.size(); ++index) {
         double x3 = xmin + ((i+0.50)/TILE_SIZE)*(xmax-xmin);
         double y3 = ymin + ((j+0.50)/TILE_SIZE)*(ymax-ymin);
         const lesser_landsat_scene_struct * scene = &bulk[metascene_list[index].second];
@@ -187,13 +187,12 @@ void zxy_far(int fd, int z, int x, int y, int verbose)
           uint8_t red, byte = 0;
 
           byte |= red = sigmoidal(scene->rgb[0][texture_index]);
-          if (tile[tile_index + 3] == 0 /* alpha channel */ ||
+          if (tile[tile_index + 3] == 0  /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
             byte |= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index]);
             byte |= tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index]);
             tile[tile_index + 3] = (byte ? -1 : 0);
-            // if (byte) break;
           }
         }
       }

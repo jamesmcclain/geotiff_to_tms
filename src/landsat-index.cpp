@@ -75,7 +75,7 @@ box_t bounding_box(lesser_landsat_scene_struct scene)
   #pragma omp simd
   for (int i = 0; i < INCREMENTS; ++i) {
     t_x[i] = b_x[i] = 0.5 + static_cast<double>(i*scene.width)/INCREMENTS;  // x values across the top and bottom
-    t_y[i] = l_x[i] = 0.5;                                                        // y values across the top and x values on the left
+    t_y[i] = l_x[i] = 0.5;                                                  // y values across the top and x values on the left
     b_y[i] = 0.5 + static_cast<double>(scene.height);                       // y values across the bottom
     r_x[i] = 0.5 + static_cast<double>(scene.width);                        // x values on the right
     l_y[i] = r_y[i] = 0.5 + static_cast<double>(i*scene.height)/INCREMENTS; // y values on the left and right
