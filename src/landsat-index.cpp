@@ -162,6 +162,22 @@ void metadata(const std::string & prefix, struct lesser_landsat_scene_struct & s
                      GDT_UInt16, 0, 0)) exit(-1);
   }
 
+  // Calculate minima, maxima
+  s.max[0] = s.max[1] = s.max[2] = 0;
+  for (int j = 0; j < SMALL_TILE_SIZE; ++j) {
+    for (int i = 0; i < SMALL_TILE_SIZE; ++i) {
+      uint16_t r, g, b;
+      r = s.rgb[0][i + j*SMALL_TILE_SIZE];
+      g = s.rgb[1][i + j*SMALL_TILE_SIZE];
+      b = s.rgb[2][i + j*SMALL_TILE_SIZE];
+      if (r | g | b) {
+        s.max[0] = std::max(s.max[0], r);
+        s.max[1] = std::max(s.max[1], g);
+        s.max[2] = std::max(s.max[2], b);
+      }
+    }
+  }
+
   // Cleanup
   CPLFree(proj4);
   OSRRelease(srs);
@@ -179,7 +195,7 @@ int main(int argc, const char ** argv)
   std::string list_prefix = std::string(DEFAULT_LIST_PREFIX);
   std::string read_prefix = std::string(DEFAULT_READ_PREFIX);
   std::string stem = std::string(DEFAULT_STEM);
-  int order_of_magnitude = 28;
+  int order_of_magnitude = 20;
 
   // Arguments from command line
   if (argc > 1) stem = std::string(argv[1]);

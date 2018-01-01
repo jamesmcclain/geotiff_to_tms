@@ -45,6 +45,7 @@ struct texture_data {
   std::vector<double> xs, ys;
   std::variant<std::shared_ptr<uint16_t>, const uint16_t *> textures[3];
   uint32_t texture_width = 0, texture_height = 0;
+  uint16_t max[3];
   double xscale, yscale;
 };
 
