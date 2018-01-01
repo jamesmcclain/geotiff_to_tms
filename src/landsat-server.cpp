@@ -425,9 +425,9 @@ uint8_t sigmoidal(uint16_t _u, uint16_t max)
 {
   if (!_u) return 0;
 
-  if (max >= 15000) max = 25000;
+  max = 25000;
   double u = (((double)_u) - 0) / (max - 0);
-  double beta = 10, alpha = 0.50;
+  double beta = 5, alpha = 0.50;
   double numer = 1/(1+exp(beta*(alpha-u))) - 1/(1+exp(beta));
   double denom = 1/(1+exp(beta*(alpha-1))) - 1/(1+exp(beta*alpha));
   double gu = std::max(0.0, std::min(1.0, numer / denom));
