@@ -36,20 +36,31 @@ import csv
 import re
 import gzip
 
-desired = set([])
-scenes = {}
 
 # bulk_pluck.py metadata.csv scene_list.gz
 # metadata.csv comes from https://landsat.usgs.gov/landsat-bulk-metadata-service
 # scene_list.gz comes from http://landsat-pds.s3.amazonaws.com/c1/L8/scene_list.gz
+
+scenes = {}
 
 with open(sys.argv[1]) as f:
     reader = csv.DictReader(f, delimiter=',')
 
     for row in reader:
         product_id = row['LANDSAT_PRODUCT_ID']
-        if row['dayOrNight'] == 'DAY':
-            desired.add(product_id)
+        cloud_cover = float(row['CLOUD_COVER_LAND'])
+        is_day = (row['dayOrNight'] == 'DAY')
+        if (0.0 <= cloud_cover and cloud_cover <= 10.0 and is_day):
+            pair = (row['row'], row['path'])
+            if pair in scenes:
+                elevation_1 = float(row['sunElevation'])
+                elevation_2 = float(scenes[pair]['sunElevation'])
+                if (elevation_1 > elevation_2):
+                    scenes[pair] = row
+            else:
+                scenes[pair] = row
+
+desired = set([row['LANDSAT_PRODUCT_ID'] for row in scenes.values()])
 
 with gzip.open(sys.argv[2]) as f:
     reader = csv.DictReader(f, delimiter=',')
@@ -57,21 +68,4 @@ with gzip.open(sys.argv[2]) as f:
 
     for csv_row in reader:
         if csv_row['productId'] in desired:
-            path = csv_row['path']
-            row = csv_row['row']
-            pair = (path, row)
-            if pair in scenes:
-                cloud_cover_1 = float(scenes[pair]['cloudCover'])
-                cloud_cover_2 = float(csv_row['cloudCover'])
-                if cloud_cover_1 < 0:
-                    cloud_cover_1 = 100 - cloud_cover_1
-                if cloud_cover_2 < 0:
-                    cloud_cover_2 = 100 - cloud_cover_2
-
-                if cloud_cover_2 < cloud_cover_1:
-                    scenes[pair] = csv_row
-            elif pair not in scenes:
-                scenes[pair] = csv_row
-
-    for pair, csv_row in scenes.viewitems():
-        writer.writerow(csv_row)
+            writer.writerow(csv_row)
