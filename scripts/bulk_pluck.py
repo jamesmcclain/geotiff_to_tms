@@ -43,7 +43,14 @@ import gzip
 
 scenes = {}
 
-with open(sys.argv[1]) as f:
+def open2(filename):
+    gzipped = re.compile("\.gz$")
+    if (gzipped.search(filename)):
+        return gzip.open(filename)
+    else:
+        return open(filename)
+
+with open2(sys.argv[1]) as f:
     reader = csv.DictReader(f, delimiter=',')
 
     for row in reader:
@@ -62,7 +69,7 @@ with open(sys.argv[1]) as f:
 
 desired = set([row['LANDSAT_PRODUCT_ID'] for row in scenes.values()])
 
-with gzip.open(sys.argv[2]) as f:
+with open2(sys.argv[2]) as f:
     reader = csv.DictReader(f, delimiter=',')
     writer = csv.DictWriter(sys.stdout, fieldnames=reader.fieldnames)
 
