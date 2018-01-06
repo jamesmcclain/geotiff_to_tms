@@ -56,19 +56,25 @@ with open2(sys.argv[1]) as f:
     starting_date = parse("2017-04-11")
 
     for row in reader:
-        product_id = row['LANDSAT_PRODUCT_ID']
-        cloud_cover = float(row['CLOUD_COVER_LAND'])
-        is_day = (row['dayOrNight'] == 'DAY')
-        in_range = (parse(row['acquisitionDate']) >= starting_date)
-        if (0.0 <= cloud_cover and cloud_cover <= 10.0 and is_day and in_range):
-            pair = (row['row'], row['path'])
-            if pair in scenes:
+        if (row['dayOrNight'] != 'DAY'):
+            continue
+        if (parse(row['acquisitionDate']) < starting_date):
+            continue
+
+        pair = (row['row'], row['path'])
+
+        if (pair not in scenes):
+            scenes[pair] = row
+        else:
+            cloud_cover_1 = int(float(row['CLOUD_COVER_LAND'])/10)
+            cloud_cover_2 = int(float(scenes[pair]['CLOUD_COVER_LAND'])/10)
+            if (cloud_cover_1 < cloud_cover_2):
+                scenes[pair] = row
+            elif (cloud_cover_1 == cloud_cover_2):
                 elevation_1 = float(row['sunElevation'])
                 elevation_2 = float(scenes[pair]['sunElevation'])
                 if (elevation_1 > elevation_2):
                     scenes[pair] = row
-            else:
-                scenes[pair] = row
 
 desired = set([row['LANDSAT_PRODUCT_ID'] for row in scenes.values()])
 
