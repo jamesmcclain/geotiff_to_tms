@@ -35,6 +35,7 @@ import sys
 import csv
 import re
 import gzip
+from dateutil.parser import parse
 
 
 # bulk_pluck.py metadata.csv scene_list.gz
@@ -52,12 +53,14 @@ def open2(filename):
 
 with open2(sys.argv[1]) as f:
     reader = csv.DictReader(f, delimiter=',')
+    starting_date = parse("2017-04-11")
 
     for row in reader:
         product_id = row['LANDSAT_PRODUCT_ID']
         cloud_cover = float(row['CLOUD_COVER_LAND'])
         is_day = (row['dayOrNight'] == 'DAY')
-        if (0.0 <= cloud_cover and cloud_cover <= 10.0 and is_day):
+        in_range = (parse(row['acquisitionDate']) >= starting_date)
+        if (0.0 <= cloud_cover and cloud_cover <= 10.0 and is_day and in_range):
             pair = (row['row'], row['path'])
             if pair in scenes:
                 elevation_1 = float(row['sunElevation'])
