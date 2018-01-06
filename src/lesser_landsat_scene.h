@@ -43,6 +43,7 @@ class lesser_landsat_scene_struct {
   char proj4[1<<8];
   double transform[6];
   uint32_t width, height; // In image coordinates
+  uint16_t max[3];
   uint16_t rgb[3][SMALL_TILE_SIZE2];
 };
 

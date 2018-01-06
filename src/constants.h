@@ -29,69 +29,24 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __LANDSAT_H__
-#define __LANDSAT_H__
+#ifndef __CONSTANTS_H__
+#define __CONSTANTS_H__
 
-#include "gdal.h"
-#include "cpl_conv.h"
-#include "ogr_srs_api.h"
-#include "proj_api.h"
-
-#include "constants.h"
-#include "lesser_landsat_scene.h"
-
-
-struct periphery_struct {
-  double   top[TILE_SIZE<<1]; // two coordinates ergo shift
-  double   bot[TILE_SIZE<<1];
-  double  left[TILE_SIZE<<1];
-  double right[TILE_SIZE<<1];
-};
-
-union coordinates_struct {
-  struct periphery_struct periphery;
-  double patch [TILE_SIZE2<<1]; // two coordinates ergo shift
-};
-
-typedef struct greater_landsat_scene_struct {
-  struct lesser_landsat_scene_struct lesser;
-
-  // Datasets
-  GDALDatasetH r_dataset;
-  GDALDatasetH g_dataset;
-  GDALDatasetH b_dataset;
-
-  // Bands
-  GDALRasterBandH r_band;
-  GDALRasterBandH g_band;
-  GDALRasterBandH b_band;
-
-  // Textures
-  uint16_t r_texture[TILE_SIZE2];
-  uint16_t g_texture[TILE_SIZE2];
-  uint16_t b_texture[TILE_SIZE2];
-
-  // Coordinates
-  union coordinates_struct coordinates;
-
-  // bounding box for the current tile in source image coordinates
-  double xmin, xmax, ymin, ymax;
-
-  // Information about the source image.  The bounding box given on
-  // the second and third lines is the intersection of the source
-  // image with the tile.
-  uint32_t src_width, src_height;
-  uint32_t src_window_xmin, src_window_ymin;
-  uint32_t src_window_width, src_window_height;
-
-  // The starting point of the texture within the tile, as well as its
-  // height and width.  Here, the red, green, and blue textures are
-  // referred to in the singular.
-  uint32_t tile_window_xmin, tile_window_ymin;
-  uint32_t tile_window_width, tile_window_height;
-
-  int dirty;
-
-} landsat_scene;
+#define BAD (0xBAADF00D)
+#define BULK_EXTENSION ".bulk"
+#define DEFAULT_LIST_PREFIX "https://s3-us-west-2.amazonaws.com/landsat-pds/"
+#define DEFAULT_READ_PREFIX "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
+#define DEFAULT_STEM "/tmp/landsat"
+#define INDEX_EXTENSION ".index"
+#define RADIUS (6378137.0)
+#define RETRIES (3)
+#define SMALL_TILE_SIZE2 (SMALL_TILE_SIZE * SMALL_TILE_SIZE)
+#define SMALL_TILE_SIZE (int)(1.414213562373095048801688724209698078569671875376948073176*(1<<SMALL_TILE_ZOOM))
+#define SMALL_TILE_ZOOM (8)
+#define STRING_BUFFER_SIZE (1<<10)
+#define STRING_LEN (1<<10)
+#define TILE_SIZE (1<<8)
+#define TILE_SIZE2 (TILE_SIZE * TILE_SIZE)
+#define WEBMERCATOR "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs"
 
 #endif

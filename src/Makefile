@@ -16,7 +16,7 @@ landsat-index: landsat-index.o
 landsat-server: server.o fullio.o landsat-server.o pngwrite.o
 	$(CXX) $^ $(LDFLAGS) -fopenmp -o $@
 
-landsat-server.o: landsat-server.cpp constants.h greater_landsat_scene.h lesser_landsat_scene.h load.h projection.h rtree.hpp textures.hpp
+landsat-server.o: landsat-server.cpp constants.h lesser_landsat_scene.h load.h projection.h rtree.hpp textures.hpp
 	$(CXX) $(CXXFLAGS) $(GDAL_CFLAGS) $(BOOST_CXXFLAGS) -Wno-reorder -Wno-unused-parameter $< -fopenmp -c -o $@
 
 landsat-index.o: landsat-index.cpp lesser_landsat_scene.h projection.h rtree.hpp

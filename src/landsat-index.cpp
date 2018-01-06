@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <limits>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -71,11 +72,15 @@ box_t bounding_box(lesser_landsat_scene_struct scene)
   std::vector<double> r_y = std::vector<double>(INCREMENTS);
   projPJ projection_pj = NULL;
 
+  if (scene.width == BAD || scene.height == BAD)
+    return box_t(point_t(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest()),
+                 point_t(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest()));
+
   // Get world coordinates around the periphery
   #pragma omp simd
   for (int i = 0; i < INCREMENTS; ++i) {
     t_x[i] = b_x[i] = 0.5 + static_cast<double>(i*scene.width)/INCREMENTS;  // x values across the top and bottom
-    t_y[i] = l_x[i] = 0.5;                                                        // y values across the top and x values on the left
+    t_y[i] = l_x[i] = 0.5;                                                  // y values across the top and x values on the left
     b_y[i] = 0.5 + static_cast<double>(scene.height);                       // y values across the bottom
     r_x[i] = 0.5 + static_cast<double>(scene.width);                        // x values on the right
     l_y[i] = r_y[i] = 0.5 + static_cast<double>(i*scene.height)/INCREMENTS; // y values on the left and right
@@ -123,13 +128,27 @@ void metadata(const std::string & prefix, struct lesser_landsat_scene_struct & s
   char pattern[STRING_LEN];
   char filename[STRING_LEN];
 
+  s.width = s.height = 0;
+
   // Open the bands
   sprintf(pattern, "%s%s", prefix.c_str(), s.filename);
   for (int i = 0; i < 3; ++ i) {
     sprintf(filename, pattern, 4-i);
     if (verbose) fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", filename);
-    if ((handles[i] = GDALOpen(filename, GA_ReadOnly)) == NULL) exit(-1);
+    for (int j = 0; ((handles[i] = GDALOpen(filename, GA_ReadOnly)) == NULL); ++j) {
+      if (j >= RETRIES) {
+        fprintf(stderr, ANSI_COLOR_RED "Failed: %s:%d (handle)" ANSI_COLOR_RESET "\n", s.filename, i);
+        s.width = s.height = BAD;
+        break;
+      }
+      else {
+        fprintf(stderr, ANSI_COLOR_RED "Retrying: %s:%d (handle)" ANSI_COLOR_RESET "\n", s.filename, i);
+        sleep(3);
+      }
+    }
   }
+
+  if (s.width == BAD || s.height == BAD) goto no_handles;
 
   // Get projection
   srs = OSRNewSpatialReference(NULL);
@@ -154,19 +173,51 @@ void metadata(const std::string & prefix, struct lesser_landsat_scene_struct & s
     int w = GDALGetRasterXSize(handles[i]);
     int h = GDALGetRasterYSize(handles[i]);
 
-    if (GDALRasterIO(band,
-                     GF_Read,
-                     0, 0, w, h,
-                     &(s.rgb[i]),
-                     SMALL_TILE_SIZE, SMALL_TILE_SIZE,
-                     GDT_UInt16, 0, 0)) exit(-1);
+    for (int j = 0; GDALRasterIO(band,
+                                 GF_Read,
+                                 0, 0, w, h,
+                                 &(s.rgb[i]),
+                                 SMALL_TILE_SIZE, SMALL_TILE_SIZE,
+                                 GDT_UInt16, 0, 0); ++j) {
+      if (j >= RETRIES) {
+        fprintf(stderr, ANSI_COLOR_RED "Failed: %s:%d (preview)" ANSI_COLOR_RESET "\n", s.filename, i);
+        s.width = s.height = BAD;
+        break;
+      }
+      else {
+        fprintf(stderr, ANSI_COLOR_RED "Retrying: %s:%d (preview)" ANSI_COLOR_RESET "\n", s.filename, i);
+        sleep(3);
+      }
+    }
+  }
+
+  if (s.width == BAD || s.height == BAD) goto no_previews;
+
+  // Calculate minima, maxima
+  s.max[0] = s.max[1] = s.max[2] = 0;
+  for (int j = 0; j < SMALL_TILE_SIZE; ++j) {
+    for (int i = 0; i < SMALL_TILE_SIZE; ++i) {
+      uint16_t r, g, b;
+      r = s.rgb[0][i + j*SMALL_TILE_SIZE];
+      g = s.rgb[1][i + j*SMALL_TILE_SIZE];
+      b = s.rgb[2][i + j*SMALL_TILE_SIZE];
+      if (r | g | b) {
+        s.max[0] = std::max(s.max[0], r);
+        s.max[1] = std::max(s.max[1], g);
+        s.max[2] = std::max(s.max[2], b);
+      }
+    }
   }
 
   // Cleanup
+ no_previews:
   CPLFree(proj4);
   OSRRelease(srs);
   for (int i = 0; i < 3; ++i)
     GDALClose(handles[i]);
+
+ no_handles:
+  return;
 }
 
 int main(int argc, const char ** argv)
@@ -179,7 +230,7 @@ int main(int argc, const char ** argv)
   std::string list_prefix = std::string(DEFAULT_LIST_PREFIX);
   std::string read_prefix = std::string(DEFAULT_READ_PREFIX);
   std::string stem = std::string(DEFAULT_STEM);
-  int order_of_magnitude = 28;
+  int order_of_magnitude = 20;
 
   // Arguments from command line
   if (argc > 1) stem = std::string(argv[1]);

@@ -48,9 +48,13 @@
 #include <boost/geometry/algorithms/intersects.hpp>
 #include <boost/math/constants/constants.hpp>
 
+#include "gdal.h"
+#include "cpl_conv.h"
+#include "ogr_srs_api.h"
+#include "proj_api.h"
+
 #include "ansi.h"
 #include "constants.h"
-#include "greater_landsat_scene.h"
 #include "lesser_landsat_scene.h"
 #include "load.h"
 #include "pngwrite.h"
@@ -78,7 +82,7 @@ void zxy_far(int fd, int z, int x, int y, int verbose);
 void zxy_near(int fd, int z, int x, int y, int verbose);
 void zxy_read(int z, int x, int y, const value_t & pair, texture_data & data);
 void fetch(const value_t & pair, int z, const box_t & tile_bb, texture_data & data);
-uint8_t sigmoidal(uint16_t _u);
+uint8_t sigmoidal(uint16_t _u, uint16_t max);
 
 
 // Global
@@ -165,10 +169,14 @@ void zxy_far(int fd, int z, int x, int y, int verbose)
 
       rtree_ptr->query(bgi::intersects(box), std::back_inserter(metascene_list));
 
-      for (int index = (int)metascene_list.size()-1; index >= 0; --index) {
+      for (unsigned int index = 0; index < metascene_list.size(); ++index) {
         double x3 = xmin + ((i+0.50)/TILE_SIZE)*(xmax-xmin);
         double y3 = ymin + ((j+0.50)/TILE_SIZE)*(ymax-ymin);
         const lesser_landsat_scene_struct * scene = &bulk[metascene_list[index].second];
+
+        if (scene->width == BAD || scene->height == BAD || !(scene->width && scene->height)) {
+          continue;
+        }
 
         projPJ projection = pj_init_plus(scene->proj4); // XXX cache
         pj_transform(webmercator, projection, 1, 1, &x3, &y3, NULL);
@@ -182,14 +190,13 @@ void zxy_far(int fd, int z, int x, int y, int verbose)
           int texture_index = u + v*SMALL_TILE_SIZE;
           uint8_t red, byte = 0;
 
-          byte |= red = sigmoidal(scene->rgb[0][texture_index]);
-          if (tile[tile_index + 3] == 0 /* alpha channel */ ||
+          byte |= red = sigmoidal(scene->rgb[0][texture_index], scene->max[0]);
+          if (tile[tile_index + 3] == 0  /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
-            byte |= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index]);
-            byte |= tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index]);
+            byte |= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index], scene->max[1]);
+            byte |= tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index], scene->max[2]);
             tile[tile_index + 3] = (byte ? -1 : 0);
-            // if (byte) break;
           }
         }
       }
@@ -266,8 +273,10 @@ void fetch(const value_t & metascene, int z, const box_t & tile_bounding_box, te
     data.yscale = (double)data.texture_height / scene->height;
     data.bounding_box = image_bounding_box; // adjust the texture bounding box
 
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 3; ++i) {
+      data.max[i] = scene->max[i];
       data.textures[i] = static_cast<const uint16_t *>(scene->rgb[i]);
+    }
   }
   else { // If previews are not usable ...
     data.texture_width  = static_cast<int>(std::round(w));
@@ -290,6 +299,7 @@ void fetch(const value_t & metascene, int z, const box_t & tile_bounding_box, te
     // Reference: http://www.gdal.org/classGDALRasterBand.html#a30786c81246455321e96d73047b8edf1
     #pragma omp parallel for schedule(static) num_threads(3)
     for (int i = 0; i < 3; ++i) {
+      data.max[i] = scene->max[i];
       data.textures[i] = std::shared_ptr<uint16_t>(new uint16_t[data.texture_width * data.texture_height],
                                                    [](uint16_t * p){ delete[] p;});
       if (GDALRasterIO(bands[i],
@@ -318,6 +328,11 @@ void zxy_read(int z, int x, int y, const value_t & metascene, texture_data & dat
 {
   const lesser_landsat_scene_struct * scene = &bulk[metascene.second];
   double xmin, xmax, ymin, ymax;
+
+  if (scene->width == BAD || scene->height == BAD || !(scene->width && scene->height)) {
+    data.invalid = true;
+    return;
+  }
 
   data.xs.resize(TILE_SIZE * TILE_SIZE);
   data.ys.resize(TILE_SIZE * TILE_SIZE);
@@ -379,6 +394,8 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
     const auto texture = texture_list[k];
     const uint16_t * rgb[3] = {nullptr, nullptr, nullptr};
 
+    if (texture.invalid) continue;
+
     if (std::holds_alternative<const uint16_t *>(texture.textures[0])) {
       for (int i = 0; i < 3; ++i)
         rgb[i] = std::get<const uint16_t *>(texture.textures[i]);
@@ -401,12 +418,12 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
           int texture_index = u + v*(texture.texture_width);
           uint8_t red, byte = 0;
 
-          byte |= red = sigmoidal(rgb[0][texture_index]);
+          byte |= red = sigmoidal(rgb[0][texture_index], texture.max[0]);
           if (tile[tile_index + 3] == 0 /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
-            byte |= tile[tile_index + 1] = sigmoidal(rgb[1][texture_index]);
-            byte |= tile[tile_index + 2] = sigmoidal(rgb[2][texture_index]);
+            byte |= tile[tile_index + 1] = sigmoidal(rgb[1][texture_index], texture.max[1]);
+            byte |= tile[tile_index + 2] = sigmoidal(rgb[2][texture_index], texture.max[2]);
             tile[tile_index + 3] = (byte ? -1 : 0);
           }
         }
@@ -415,12 +432,13 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
   }
 }
 
-uint8_t sigmoidal(uint16_t _u)
+uint8_t sigmoidal(uint16_t _u, uint16_t max)
 {
   if (!_u) return 0;
 
-  double u = ((double)_u) / 23130.235294118;
-  double beta = 10, alpha = 0.50;
+  max = 25000;
+  double u = (((double)_u) - 0) / (max - 0);
+  double beta = 5, alpha = 0.50;
   double numer = 1/(1+exp(beta*(alpha-u))) - 1/(1+exp(beta));
   double denom = 1/(1+exp(beta*(alpha-1))) - 1/(1+exp(beta*alpha));
   double gu = std::max(0.0, std::min(1.0, numer / denom));

@@ -27,6 +27,12 @@ variable "tms_cidr" {
   default     = "0.0.0.0/0"
 }
 
+variable "storage" {
+  type        = "string"
+  description = "Size of the root device in gigabytes"
+  default     = "8"
+}
+
 provider "aws" {
   region = "${var.region}"
 }
@@ -67,6 +73,10 @@ resource "aws_instance" "tms" {
 
   tags {
     Name = "TMS"
+  }
+
+  root_block_device = {
+    volume_size = "${var.storage}"
   }
 }
 
