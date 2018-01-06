@@ -47,6 +47,7 @@ struct texture_data {
   uint32_t texture_width = 0, texture_height = 0;
   uint16_t max[3];
   double xscale, yscale;
+  bool invalid = false;
 };
 
 #endif

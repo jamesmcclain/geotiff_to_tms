@@ -174,8 +174,7 @@ void zxy_far(int fd, int z, int x, int y, int verbose)
         double y3 = ymin + ((j+0.50)/TILE_SIZE)*(ymax-ymin);
         const lesser_landsat_scene_struct * scene = &bulk[metascene_list[index].second];
 
-        if (scene->width == BAD || scene->height == BAD) {
-          fprintf(stderr, ANSI_COLOR_RED "Bad tile requested" ANSI_COLOR_RESET "\n");
+        if (scene->width == BAD || scene->height == BAD || !(scene->width && scene->height)) {
           continue;
         }
 
@@ -330,6 +329,11 @@ void zxy_read(int z, int x, int y, const value_t & metascene, texture_data & dat
   const lesser_landsat_scene_struct * scene = &bulk[metascene.second];
   double xmin, xmax, ymin, ymax;
 
+  if (scene->width == BAD || scene->height == BAD || !(scene->width && scene->height)) {
+    data.invalid = true;
+    return;
+  }
+
   data.xs.resize(TILE_SIZE * TILE_SIZE);
   data.ys.resize(TILE_SIZE * TILE_SIZE);
 
@@ -389,6 +393,8 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
   for (unsigned int k = 0; k < texture_list.size(); ++k) { // For each scene
     const auto texture = texture_list[k];
     const uint16_t * rgb[3] = {nullptr, nullptr, nullptr};
+
+    if (texture.invalid) continue;
 
     if (std::holds_alternative<const uint16_t *>(texture.textures[0])) {
       for (int i = 0; i < 3; ++i)
