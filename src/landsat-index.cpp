@@ -128,7 +128,16 @@ void metadata(const std::string & prefix, struct lesser_landsat_scene_struct & s
   for (int i = 0; i < 3; ++ i) {
     sprintf(filename, pattern, 4-i);
     if (verbose) fprintf(stderr, ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "\n", filename);
-    if ((handles[i] = GDALOpen(filename, GA_ReadOnly)) == NULL) exit(-1);
+    for (int j = 0; ((handles[i] = GDALOpen(filename, GA_ReadOnly)) == NULL); ++j) {
+      if (j >= RETRIES) {
+        fprintf(stderr, ANSI_COLOR_RED "Failed: %s:%d (handle)" ANSI_COLOR_RESET "\n", s.filename, i);
+        exit(-1);
+      }
+      else {
+        fprintf(stderr, ANSI_COLOR_RED "Retrying: %s:%d (handle)" ANSI_COLOR_RESET "\n", s.filename, i);
+        sleep(1);
+      }
+    }
   }
 
   // Get projection
@@ -154,12 +163,21 @@ void metadata(const std::string & prefix, struct lesser_landsat_scene_struct & s
     int w = GDALGetRasterXSize(handles[i]);
     int h = GDALGetRasterYSize(handles[i]);
 
-    if (GDALRasterIO(band,
-                     GF_Read,
-                     0, 0, w, h,
-                     &(s.rgb[i]),
-                     SMALL_TILE_SIZE, SMALL_TILE_SIZE,
-                     GDT_UInt16, 0, 0)) exit(-1);
+    for (int j = 0; GDALRasterIO(band,
+                                 GF_Read,
+                                 0, 0, w, h,
+                                 &(s.rgb[i]),
+                                 SMALL_TILE_SIZE, SMALL_TILE_SIZE,
+                                 GDT_UInt16, 0, 0); ++j) {
+      if (j >= RETRIES) {
+        fprintf(stderr, ANSI_COLOR_RED "Failed: %s:%d (preview)" ANSI_COLOR_RESET "\n", s.filename, i);
+        exit(-1);
+      }
+      else {
+        fprintf(stderr, ANSI_COLOR_RED "Retrying: %s:%d (preview)" ANSI_COLOR_RESET "\n", s.filename, i);
+        sleep(1);
+      }
+    }
   }
 
   // Calculate minima, maxima
