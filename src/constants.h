@@ -32,13 +32,14 @@
 #ifndef __CONSTANTS_H__
 #define __CONSTANTS_H__
 
+#define BAD (0xBAADF00D)
 #define BULK_EXTENSION ".bulk"
 #define DEFAULT_LIST_PREFIX "https://s3-us-west-2.amazonaws.com/landsat-pds/"
 #define DEFAULT_READ_PREFIX "/vsicurl/https://s3-us-west-2.amazonaws.com/landsat-pds/"
 #define DEFAULT_STEM "/tmp/landsat"
 #define INDEX_EXTENSION ".index"
 #define RADIUS (6378137.0)
-#define RETRIES (5)
+#define RETRIES (3)
 #define SMALL_TILE_SIZE2 (SMALL_TILE_SIZE * SMALL_TILE_SIZE)
 #define SMALL_TILE_SIZE (int)(1.414213562373095048801688724209698078569671875376948073176*(1<<SMALL_TILE_ZOOM))
 #define SMALL_TILE_ZOOM (8)

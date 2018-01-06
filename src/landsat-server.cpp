@@ -174,6 +174,11 @@ void zxy_far(int fd, int z, int x, int y, int verbose)
         double y3 = ymin + ((j+0.50)/TILE_SIZE)*(ymax-ymin);
         const lesser_landsat_scene_struct * scene = &bulk[metascene_list[index].second];
 
+        if (scene->width == BAD || scene->height == BAD) {
+          fprintf(stderr, ANSI_COLOR_RED "Bad tile requested" ANSI_COLOR_RESET "\n");
+          continue;
+        }
+
         projPJ projection = pj_init_plus(scene->proj4); // XXX cache
         pj_transform(webmercator, projection, 1, 1, &x3, &y3, NULL);
         pj_free(projection);

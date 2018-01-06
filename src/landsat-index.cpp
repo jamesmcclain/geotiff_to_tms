@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <limits>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -70,6 +71,10 @@ box_t bounding_box(lesser_landsat_scene_struct scene)
   std::vector<double> r_x = std::vector<double>(INCREMENTS);
   std::vector<double> r_y = std::vector<double>(INCREMENTS);
   projPJ projection_pj = NULL;
+
+  if (scene.width == BAD || scene.height == BAD)
+    return box_t(point_t(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest()),
+                 point_t(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest()));
 
   // Get world coordinates around the periphery
   #pragma omp simd
@@ -123,6 +128,8 @@ void metadata(const std::string & prefix, struct lesser_landsat_scene_struct & s
   char pattern[STRING_LEN];
   char filename[STRING_LEN];
 
+  s.width = s.height = 0;
+
   // Open the bands
   sprintf(pattern, "%s%s", prefix.c_str(), s.filename);
   for (int i = 0; i < 3; ++ i) {
@@ -131,14 +138,17 @@ void metadata(const std::string & prefix, struct lesser_landsat_scene_struct & s
     for (int j = 0; ((handles[i] = GDALOpen(filename, GA_ReadOnly)) == NULL); ++j) {
       if (j >= RETRIES) {
         fprintf(stderr, ANSI_COLOR_RED "Failed: %s:%d (handle)" ANSI_COLOR_RESET "\n", s.filename, i);
-        exit(-1);
+        s.width = s.height = BAD;
+        break;
       }
       else {
         fprintf(stderr, ANSI_COLOR_RED "Retrying: %s:%d (handle)" ANSI_COLOR_RESET "\n", s.filename, i);
-        sleep(1);
+        sleep(3);
       }
     }
   }
+
+  if (s.width == BAD || s.height == BAD) goto no_handles;
 
   // Get projection
   srs = OSRNewSpatialReference(NULL);
@@ -171,14 +181,17 @@ void metadata(const std::string & prefix, struct lesser_landsat_scene_struct & s
                                  GDT_UInt16, 0, 0); ++j) {
       if (j >= RETRIES) {
         fprintf(stderr, ANSI_COLOR_RED "Failed: %s:%d (preview)" ANSI_COLOR_RESET "\n", s.filename, i);
-        exit(-1);
+        s.width = s.height = BAD;
+        break;
       }
       else {
         fprintf(stderr, ANSI_COLOR_RED "Retrying: %s:%d (preview)" ANSI_COLOR_RESET "\n", s.filename, i);
-        sleep(1);
+        sleep(3);
       }
     }
   }
+
+  if (s.width == BAD || s.height == BAD) goto no_previews;
 
   // Calculate minima, maxima
   s.max[0] = s.max[1] = s.max[2] = 0;
@@ -197,10 +210,14 @@ void metadata(const std::string & prefix, struct lesser_landsat_scene_struct & s
   }
 
   // Cleanup
+ no_previews:
   CPLFree(proj4);
   OSRRelease(srs);
   for (int i = 0; i < 3; ++i)
     GDALClose(handles[i]);
+
+ no_handles:
+  return;
 }
 
 int main(int argc, const char ** argv)
