@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, James McClain
+ * Copyright (c) 2017-2018, James McClain
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without

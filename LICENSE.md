@@ -1,7 +1,7 @@
 Original BSD License
 ====================
 
-_Copyright © 2010-2014 and 2016-2017, James McClain and Mark Pugner_
+_Copyright © 2010-2014 and 2016-2018, James McClain and Mark Pugner_
 
 _All rights reserved._
 
