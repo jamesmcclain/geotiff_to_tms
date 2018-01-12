@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, James McClain
+ * Copyright (c) 2017-2018, James McClain
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -190,12 +190,12 @@ void zxy_far(int fd, int z, int x, int y, int verbose)
           int texture_index = u + v*SMALL_TILE_SIZE;
           uint8_t red, byte = 0;
 
-          byte |= red = sigmoidal(scene->rgb[0][texture_index], scene->max[0]);
+          byte = red = sigmoidal(scene->rgb[0][texture_index], scene->max[0]);
           if (tile[tile_index + 3] == 0  /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
-            byte |= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index], scene->max[1]);
-            byte |= tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index], scene->max[2]);
+            byte &= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index], scene->max[1]);
+            byte &= tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index], scene->max[2]);
             tile[tile_index + 3] = (byte ? -1 : 0);
           }
         }
@@ -406,7 +406,7 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
     }
 
     #pragma omp simd collapse(2)
-    for (int j = 0; j < TILE_SIZE; ++j) { // tile coordinate
+    for (int j = 0; j < TILE_SIZE; ++j) {   // tile coordinate
       for (int i = 0; i < TILE_SIZE; ++i) { // tile coordinate
         int tile_index = (i + j*TILE_SIZE)*4;
         double x = texture.xs[tile_index/4], y = texture.ys[tile_index/4]; // scene image coordinates
@@ -418,12 +418,12 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
           int texture_index = u + v*(texture.texture_width);
           uint8_t red, byte = 0;
 
-          byte |= red = sigmoidal(rgb[0][texture_index], texture.max[0]);
-          if (tile[tile_index + 3] == 0 /* alpha channel */ ||
+          byte = red = sigmoidal(rgb[0][texture_index], texture.max[0]);
+          if (tile[tile_index + 3] == 0  /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
-            byte |= tile[tile_index + 1] = sigmoidal(rgb[1][texture_index], texture.max[1]);
-            byte |= tile[tile_index + 2] = sigmoidal(rgb[2][texture_index], texture.max[2]);
+            byte &= tile[tile_index + 1] = sigmoidal(rgb[1][texture_index], texture.max[1]);
+            byte &= tile[tile_index + 2] = sigmoidal(rgb[2][texture_index], texture.max[2]);
             tile[tile_index + 3] = (byte ? -1 : 0);
           }
         }
