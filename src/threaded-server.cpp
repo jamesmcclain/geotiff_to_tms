@@ -29,6 +29,14 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+#include <boost/beast/version.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/config.hpp>
+#include <thread>
+
+
 // http://localhost:8001/{z}/{x}/{y}.png
 int main(int argc, const char ** argv)
 {
