@@ -194,8 +194,8 @@ void zxy_far(int fd, int z, int x, int y, int verbose)
           if (tile[tile_index + 3] == 0  /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
-            byte &= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index], scene->max[1]);
-            byte &= tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index], scene->max[2]);
+            byte |= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index], scene->max[1]);
+            tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index], scene->max[2]);
             tile[tile_index + 3] = (byte ? -1 : 0);
           }
         }
@@ -422,8 +422,8 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
           if (tile[tile_index + 3] == 0  /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
-            byte &= tile[tile_index + 1] = sigmoidal(rgb[1][texture_index], texture.max[1]);
-            byte &= tile[tile_index + 2] = sigmoidal(rgb[2][texture_index], texture.max[2]);
+            byte |= tile[tile_index + 1] = sigmoidal(rgb[1][texture_index], texture.max[1]);
+            byte |= tile[tile_index + 2] = sigmoidal(rgb[2][texture_index], texture.max[2]);
             tile[tile_index + 3] = (byte ? -1 : 0);
           }
         }
