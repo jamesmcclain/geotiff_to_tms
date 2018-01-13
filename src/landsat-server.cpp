@@ -114,7 +114,7 @@ void preload(int verbose, void * extra)
   webmercator = pj_init_plus(WEBMERCATOR);
 
   // index
-  file = new bi::managed_mapped_file(bi::open_only, indexfile.c_str());
+  file = new bi::managed_mapped_file(bi::open_copy_on_write, indexfile.c_str());
   rtree_ptr = file->find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), allocator_t(file->get_segment_manager()));
 
   // bulk
