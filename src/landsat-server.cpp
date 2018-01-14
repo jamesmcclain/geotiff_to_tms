@@ -114,7 +114,7 @@ void preload(int verbose, void * extra)
   webmercator = pj_init_plus(WEBMERCATOR);
 
   // index
-  file = new bi::managed_mapped_file(bi::open_only, indexfile.c_str());
+  file = new bi::managed_mapped_file(bi::open_copy_on_write, indexfile.c_str());
   rtree_ptr = file->find_or_construct<rtree_t>("rtree")(params_t(), indexable_t(), equal_to_t(), allocator_t(file->get_segment_manager()));
 
   // bulk
@@ -194,8 +194,8 @@ void zxy_far(int fd, int z, int x, int y, int verbose)
           if (tile[tile_index + 3] == 0  /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
-            byte &= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index], scene->max[1]);
-            byte &= tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index], scene->max[2]);
+            byte |= tile[tile_index + 1] = sigmoidal(scene->rgb[1][texture_index], scene->max[1]);
+            tile[tile_index + 2] = sigmoidal(scene->rgb[2][texture_index], scene->max[2]);
             tile[tile_index + 3] = (byte ? -1 : 0);
           }
         }
@@ -422,8 +422,8 @@ void zxy_commit(const std::vector<texture_data> & texture_list)
           if (tile[tile_index + 3] == 0  /* alpha channel */ ||
               tile[tile_index + 0] < red /* red channel */) { // write into empty pixels
             tile[tile_index + 0] = red;
-            byte &= tile[tile_index + 1] = sigmoidal(rgb[1][texture_index], texture.max[1]);
-            byte &= tile[tile_index + 2] = sigmoidal(rgb[2][texture_index], texture.max[2]);
+            byte |= tile[tile_index + 1] = sigmoidal(rgb[1][texture_index], texture.max[1]);
+            byte |= tile[tile_index + 2] = sigmoidal(rgb[2][texture_index], texture.max[2]);
             tile[tile_index + 3] = (byte ? -1 : 0);
           }
         }
